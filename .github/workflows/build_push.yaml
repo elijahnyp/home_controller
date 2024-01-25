@@ -37,6 +37,8 @@ jobs:
               sed -i "s/ghcr.io\/elijahnyp\/home_controller:[a-f0-9]\+/ghcr.io\/elijahnyp\/home_controller:${COMMITSHA_SHORT}/g" deployment/deployment.yaml
           - name: 'Push New Manifests'
             run: |
+              git config --global user.name 'Github Actions'
+              git config --global user.email 'noreply@nyp-itsours.com'
               git add deployment/deployment.yaml
               git commit -m 'update deployment with new tag [skip ci]'
               git push
