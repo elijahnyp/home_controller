@@ -9,7 +9,7 @@ import (
 	"reflect"
 )
 
-const ENV_PREFIX = "controller"
+const ENV_PREFIX = ""
 
 var Config = viper.New()
 

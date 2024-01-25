@@ -30,7 +30,7 @@ spec:
         imagePullPolicy: IfNotPresent
         envFrom:
         - secretRef:
-            name: mqtt_creds
+            name: mqtt-creds
         volumeMounts:
         - name: config-file
           mountPath: /home_controller.json
