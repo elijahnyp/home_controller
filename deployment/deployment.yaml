@@ -27,7 +27,7 @@ spec:
       - name: nypregcred
       containers:
       - name: occupancy-controller
-        image: ghcr.io/elijahnyp/home_controller:a49618c
+        image: ghcr.io/elijahnyp/home_controller:e083ff0
         imagePullPolicy: IfNotPresent
         envFrom:
         - secretRef:
