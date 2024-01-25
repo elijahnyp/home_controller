@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: occupancy-controller
+  labels:
+    app: occupancy-controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: occupancy-controller
+  template:
+    metadata:
+      labels:
+        app: occupancy-controller
+    spec:
+      tolerations:
+      - key: "node-type"
+        operator: "Equal"
+        value: "rpi4"
+        effect: "NoSchedule"
+      - key: "coral"
+        operator: "Exists"
+        effect: "PreferNoSchedule"
+      imagePullSecrets:
+      - name: nypregcred
+      containers:
+      - name: occupancy-controller
+        image: ghcr.io/elijahnyp/home_controller:acc1fe7
+        imagePullPolicy: IfNotPresent
+        envFrom:
+        - secretRef:
+            name: mqtt_creds
+        volumeMounts:
+        - name: config-file
+          mountPath: /home_controller.json
+          subPath: home_controller.json
+          readOnly: true
+      volumes:
+        - name: config-file
+          configMap:
+            name: home-controller-config

@@ -32,3 +32,11 @@ jobs:
               docker buildx create --name home_controller_builder
               docker buildx use home_controller_builder
               docker buildx build --platform linux/arm64,linux/amd64,linux/arm/v7 -t ghcr.io/elijahnyp/home_controller:${COMMITSHA_SHORT} --push .
+          - name: 'Update Deployment'
+            run: |
+              sed -i "s/ghcr.io\/elijahnyp\/home_controller:[a-f0-9]\+/ghcr.io\/elijahnyp\/home_controller:${COMMITSHA_SHORT}/g" deployment/deployment.yaml
+          - name: 'Push New Manifests'
+            run: |
+              git add deployment/deployment.yaml
+              git commit -m 'update deployment with new tag [skip ci]'
+              git push
