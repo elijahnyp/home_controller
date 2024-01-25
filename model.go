@@ -1,6 +1,9 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 var model_status *ModelStatus
 
@@ -19,10 +22,28 @@ type Room struct {
 type RoomStatus struct {
 	last_occupied int64
 	motion_state bool
+	occupied bool
 }
 
 type ModelStatus struct {
 	room_status map[string]RoomStatus
+}
+
+func (m *RoomStatus) Occupied(){
+	now := time.Now().Unix()
+	if m.last_occupied <= now {
+		m.last_occupied = now
+	}
+	m.occupied = true
+}
+
+func (m *RoomStatus) Unoccupied(){
+	m.occupied = false
+}
+
+func (m *RoomStatus) Motion(state bool){
+	m.motion_state = state
+	m.Occupied()
 }
 
 func NewModelStatus() *ModelStatus{
@@ -97,4 +118,13 @@ func (m *Model) RoomOccupancyPeriod(room string) int64{
 		}
 	}
 	return Config.GetInt64("occupancy_period_default")
+}
+
+func (m Model) SubscribeTopics() []string {
+	var topics []string
+	for _, room := range(m.Rooms){
+		topics = append(topics,room.Motion_topics...)
+		topics = append(topics,room.Pic_topics...)
+	}
+	return topics
 }

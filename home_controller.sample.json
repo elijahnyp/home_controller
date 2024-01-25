@@ -1,0 +1,57 @@
+{
+	"broker_uri": "tls://mqtt:8883",
+	"password": "password",
+	"username": "username",
+	"id": "34tsklfgj4i",
+	"cleansess": true,
+    "debug": true,
+    "frequency": 1,
+    "occupancy_period_default": 120,
+    "insecure_tls": true,
+    "detection_url": "https://deepstack/v1/vision/detection",
+    "model": {
+        "rooms": [ 
+            {
+                "name": "office",
+                "occupancy_period": 120,
+                "occupancy_topic": "hab/model/office/occupancy",
+                "motion_topics": ["hab/wangwood/out/office_sensor_motion/state"],
+                "pic_topics": [
+                    "esp-cam/esp32-cam/office_cam_1/image",
+                    "esp-cam/sensor/office_sensor/image"
+                ]
+            },
+            { 
+                "name": "kitchen",
+                "occupancy_period": 600,
+                "occupancy_topic": "hab/model/kitchen/occupancy",
+                "motion_topics": ["hab/wangwood/out/kitchen_sensor_motion/state"],
+                "pic_topics": [
+                    "esp-cam/esp32-cam/kitchen_cam_1/image"
+                ]
+            },
+            { 
+                "name": "family_room",
+                "occupancy_period": 120,
+                "occupancy_topic": "hab/model/family_room/occupancy",
+                "motion_topics": ["hab/wangwood/out/family_room_sensor_motion/state"],
+                "pic_topics": [
+                    "esp-cam/esp32-cam/family_room_2/image",
+                    "esp-cam/esp32-cam/family_room_3/image",
+                    "esp-cam/sensor/family_room_1/image"
+                ]
+            },
+            {
+                "name": "garage",
+                "occupancy_period": 300,
+                "occupancy_topic": "hab/model/garage/occupancy",
+                "motion_topics": [
+                    "hab/wangwood/out/garage_stairs_door_sensor",
+                    "hab/wangwood/out/garage_sensor_motion"
+                ],
+                "pic_topics": []
+            }
+        ]
+    },
+    "details_port": 8888
+}

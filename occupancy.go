@@ -119,7 +119,8 @@ func MqttInit(){
 	if token := client.Connect(); token.Wait() && token.Error() != nil {
 		panic(token.Error())
 	}
-	for _, topic := range Config.GetStringSlice("topics") {
+	// for _, topic := range Config.GetStringSlice("topics") {
+	for _, topic := range model.SubscribeTopics() {
 		if token := client.Subscribe(topic, 0, nil); token.Wait() && token.Error() != nil {
 			fmt.Println(token.Error())
 			os.Exit(1)
@@ -245,27 +246,32 @@ func OccupancyManagerRoutine() {
 		var message string
 		room := model_status.room_status[item.Room]
 		if item.Analysis_result == OCCUPIED {
-			if room.last_occupied <= now { //do this so we can set future occupied
-				room.last_occupied = now
-			}
+			// if room.last_occupied <= now { //do this so we can set future occupied
+			// 	room.last_occupied = now
+			// }
+			room.Occupied()
 			cam_opinion = true
 		} else if item.Analysis_result == UNOCCUPIED {
 			if room.last_occupied < now - model.RoomOccupancyPeriod(item.Room) {
 				if Config.GetBool("debug") {
 					fmt.Printf("%s OCCUPANCY PERIOD EXPIRED\n", item.Room)
 				}
+				room.Unoccupied()
 				cam_opinion = false
 			} else {
 				cam_opinion = true
 			}
 		}
 		if item.Analysis_result == MOTION_START {
-			if room.last_occupied <= now { //do this so we can set future occupied
-				room.last_occupied = now
-			}
-			room.motion_state = true
+			// if room.last_occupied <= now { //do this so we can set future occupied
+			// 	room.last_occupied = now
+			// }
+			room.Occupied()
+			// room.motion_state = true
+			room.Motion(true)
 		} else if item.Analysis_result == MOTION_STOP{
-			 room.motion_state = false
+			//  room.motion_state = false
+			room.Motion(false)
 		} 
 		if ! cam_opinion && ! room.motion_state {
 			message = "false"

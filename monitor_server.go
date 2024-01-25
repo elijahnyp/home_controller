@@ -47,6 +47,11 @@ func (s *MonitorServer)AddHandler(path string, handler func(http.ResponseWriter,
 	// s.handlers[path] = handler
 }
 
+func (s *MonitorServer)AddRawHandler(path string, handler http.Handler){
+	http.Handle(path, handler)
+
+}
+
 // func (s MonitorServer)RemoveHandler(path string){
 // 	delete(s.handlers, path)
 // }
