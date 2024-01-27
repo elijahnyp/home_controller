@@ -32,6 +32,13 @@ spec:
         envFrom:
         - secretRef:
             name: mqtt-creds
+        resources:
+          requests:
+            cpu: 100m
+            memory: 600Mi
+          limits:
+            cpu: 500m
+            memory: 1Gi
         volumeMounts:
         - name: config-file
           mountPath: /home_controller.json
