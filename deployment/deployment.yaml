@@ -85,7 +85,7 @@ spec:
             memory: 1Gi
         volumeMounts:
         - name: config-file
-          mountPath: /home_controller
+          mountPath: /home_controller/config
           readOnly: true
       volumes:
         - name: config-file
