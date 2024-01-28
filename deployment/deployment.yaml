@@ -1,3 +1,41 @@
+kind: Service
+apiVersion: v1
+metadata:
+  labels:
+    app: occupancy-controller
+  name: occupancy-controller-service
+spec:
+  ports:
+    - port: 80
+      targetPort: monitor
+  selector:
+    app: occupancy-controller
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: occupancy-controller
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    cert-manager.io/cluster-issuer: internal
+spec:
+  tls:
+    - hosts:
+      - occupancy.kube.artynet.local
+      secretName: occupancy.kube.artynet.local.crt
+  rules:
+  - host: occupancy.kube.artynet.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: occupancy-controller-service
+            port:
+              number: 80
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -29,6 +67,10 @@ spec:
       - name: occupancy-controller
         image: ghcr.io/elijahnyp/home_controller:63eebed
         imagePullPolicy: IfNotPresent
+        ports:
+          - containerPort: 8888
+            protocol: TCP
+            name: monitor
         envFrom:
         - secretRef:
             name: mqtt-creds
