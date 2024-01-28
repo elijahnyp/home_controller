@@ -53,5 +53,15 @@
             }
         ]
     },
-    "details_port": 8888
+    "details_port": 8888,
+    "cam_forwarder": {
+        "note": "this is used to forward images to mqtt from cameras that don't support it natively",
+        "enabled": true,
+        "frequency": 4,
+        "workers": 4,
+        "cameras": {
+            "snap_url": "http://10.0.0.202/snap.jpeg",
+            "topic": "hab/garage/camera1/image"
+        }
+    }
 }

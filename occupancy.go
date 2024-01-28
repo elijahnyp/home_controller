@@ -174,10 +174,10 @@ func ProcessImage(mimage MQTT_Item) {
 			fmt.Println("empty copy but no error")
 		}
 	}
-	multipartWriter.Close() //must close or http client doesn't put in content length - can't use defer
 
 	// set minimum confidence
 	multipartWriter.WriteField("min_confidence", "0.4")
+	multipartWriter.Close() //must close or http client doesn't put in content length - can't use defer
 	// send request
 	req, err := http.NewRequest("POST", Config.GetString("detection_url"), upload_body)
 	if err != nil {
@@ -476,6 +476,8 @@ func main() {
 	monitor.AddHandler("/room_status", StatusOverview)
 	monitor.Start()
 	registerNewConfigListener(func(){monitor.Restart()})
+	cam_forwarder.MakeCamForwarder()
+	cam_forwarder.Start()
 	fmt.Println("ready")
 	select {} //block forever
 }
