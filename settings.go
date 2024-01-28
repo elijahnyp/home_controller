@@ -54,12 +54,13 @@ func setupConfig(){
 	
 	// config file
 	Config.SetConfigName("home_controller")
-	Config.SetConfigType("json")
+	// Config.SetConfigType("json")
 	Config.AddConfigPath("/")
 	Config.AddConfigPath("./")
-	Config.AddConfigPath("/etc/")
-	Config.AddConfigPath("/home_controller/")
-	Config.AddConfigPath("/home_controller/config/")
+	Config.AddConfigPath("./config")
+	Config.AddConfigPath("/etc")
+	Config.AddConfigPath("/home_controller")
+	Config.AddConfigPath("/home_controller/config")
 	
 	err := Config.ReadInConfig()
 	if err != nil {
