@@ -176,7 +176,7 @@ func ProcessImage(mimage MQTT_Item) {
 	}
 
 	// set minimum confidence
-	multipartWriter.WriteField("min_confidence", "0.4")
+	multipartWriter.WriteField("min_confidence", "0.5")
 	multipartWriter.Close() //must close or http client doesn't put in content length - can't use defer
 	// send request
 	req, err := http.NewRequest("POST", Config.GetString("detection_url"), upload_body)
