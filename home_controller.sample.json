@@ -5,6 +5,7 @@
 	"id": "34tsklfgj4i",
 	"cleansess": true,
     "debug": true,
+    "min_confidence": 0.5,
     "frequency": 1,
     "occupancy_period_default": 120,
     "insecure_tls": true,

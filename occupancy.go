@@ -176,7 +176,7 @@ func ProcessImage(mimage MQTT_Item) {
 	}
 
 	// set minimum confidence
-	multipartWriter.WriteField("min_confidence", "0.5")
+	// multipartWriter.WriteField("min_confidence", "0.5")
 	multipartWriter.Close() //must close or http client doesn't put in content length - can't use defer
 	// send request
 	req, err := http.NewRequest("POST", Config.GetString("detection_url"), upload_body)
@@ -215,7 +215,7 @@ func ProcessImage(mimage MQTT_Item) {
 			break
 		}
 	}
-	if person {
+	if person && confidence >= float32(Config.GetFloat64("min_confidence")){
 		fmt.Printf("%s occupied: %f\n", mimage.Topic, confidence)
 		// last_occupied[mimage.Topic] = now
 		mimage.Analysis_result = OCCUPIED
