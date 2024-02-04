@@ -10,6 +10,12 @@ var client MQTT.Client
 
 var connectHandler MQTT.OnConnectHandler = func(client MQTT.Client) {
     logger.Debug().Msg("Connected")
+	for _, topic := range model.SubscribeTopics() {
+		if token := client.Subscribe(topic, 0, nil); token.Wait() && token.Error() != nil {
+			logger.Panic().Msgf("Error Subscribing: %v",fmt.Errorf("%v", token.Error()))
+			// os.Exit(1)
+		}
+	}
 }
 
 var connectLostHandler MQTT.ConnectionLostHandler = func(client MQTT.Client, err error) {
@@ -65,10 +71,5 @@ func MqttInit(){
 		panic(token.Error())
 	}
 	// for _, topic := range Config.GetStringSlice("topics") {
-	for _, topic := range model.SubscribeTopics() {
-		if token := client.Subscribe(topic, 0, nil); token.Wait() && token.Error() != nil {
-			logger.Panic().Msgf("Error Subscribing: %v",fmt.Errorf("%v", token.Error()))
-			os.Exit(1)
-		}
-	}
+
 }
