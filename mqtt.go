@@ -3,7 +3,6 @@ package main
 import (
 	MQTT "github.com/eclipse/paho.mqtt.golang"
 	"fmt"
-	"os"
 )
 
 var client MQTT.Client
