@@ -105,7 +105,7 @@ func (m *Model) BuildModel() error{
 	}
 	err := Config.UnmarshalKey("model",m)
 	if err != nil {
-		fmt.Println(err)
+		logger.Error().Msgf("error unmarshaling model: %v", err)
 		return fmt.Errorf("error")
 	}
 	return nil

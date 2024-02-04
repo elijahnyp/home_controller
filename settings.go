@@ -18,7 +18,7 @@ var config_listeners []func()
 func registerNewConfigListener(new_listener func()){
 	for _, listener := range(config_listeners){
 		if reflect.ValueOf(new_listener).Pointer() == reflect.ValueOf(listener).Pointer(){
-			fmt.Println("already registered")
+			logger.Warn().Msg("config listener already registered")
 			return
 		}
 	}
@@ -64,7 +64,7 @@ func setupConfig(){
 	
 	err := Config.ReadInConfig()
 	if err != nil {
-		fmt.Println(fmt.Errorf("unable to read config file: %w", err))
+		logger.Error().Msgf("unable to read config file: %v", fmt.Errorf("%v", err))
 	}
 
 	// environment variables
@@ -75,10 +75,8 @@ func setupConfig(){
 	//watch for changes
 	Config.WatchConfig()
 	Config.OnConfigChange(func(e fsnotify.Event){
-		if Config.GetBool("debug") {
-			fmt.Println("Config file changed: ", e.Name)
-			fmt.Println(e.String())
-		}
+		logger.Info().Msgf("Config file changed: %v", e.Name)
+		logger.Debug().Msgf("Config Additional Info: %v", e.String())
 		onNewConfig()
 	})
 

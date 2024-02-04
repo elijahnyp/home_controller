@@ -9,19 +9,15 @@ import (
 var client MQTT.Client
 
 var connectHandler MQTT.OnConnectHandler = func(client MQTT.Client) {
-    fmt.Println("Connected")
+    logger.Debug().Msg("Connected")
 }
 
 var connectLostHandler MQTT.ConnectionLostHandler = func(client MQTT.Client, err error) {
-    fmt.Printf("Connect lost: %v", err)
+    logger.Debug().Msgf("Connect lost: %v", err)
 }
 
 func receiver(client MQTT.Client, message MQTT.Message) {
-	// fmt.Printf("Topic: %s, Message: %s\n", message.Topic(), string(message.Payload()))
-	// fmt.Printf("Message Received at topic %s\n", message.Topic())
-	if Config.GetBool("debug") {
-		fmt.Printf("Message Received on topic %s",message.Topic())
-	}
+	logger.Debug().Msgf("Message Received on topic %s",message.Topic())
 	var mitem MQTT_Item
 	mitem.Data = message.Payload()
 	mitem.Topic = message.Topic()
@@ -38,9 +34,7 @@ func receiver(client MQTT.Client, message MQTT.Message) {
 		mitem.Type = OCCUPANCY
 		//do something here
 	default:
-		if Config.GetBool("debug") {
-			fmt.Printf("topic %s not found in model.  Fix subscription or add to model\n", message.Topic())
-		}
+		logger.Debug().Msgf("topic %s not found in model.  Fix subscription or add to model\n", message.Topic())
 	}
 }
 
@@ -58,7 +52,7 @@ func MqttInit(){
 	opts.SetDefaultPublishHandler(receiver)
 
 	if client != nil {
-		fmt.Println("Client exists - destroying")
+		logger.Debug().Msg("Client exists - destroying")
 		if client.IsConnected() {
 			client.Disconnect(1000)
 		}
@@ -73,7 +67,7 @@ func MqttInit(){
 	// for _, topic := range Config.GetStringSlice("topics") {
 	for _, topic := range model.SubscribeTopics() {
 		if token := client.Subscribe(topic, 0, nil); token.Wait() && token.Error() != nil {
-			fmt.Println(token.Error())
+			logger.Panic().Msgf("Error Subscribing: %v",fmt.Errorf("%v", token.Error()))
 			os.Exit(1)
 		}
 	}

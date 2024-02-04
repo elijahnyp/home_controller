@@ -87,14 +87,10 @@ func ProcessImageRoutine(){
 		now := time.Now().Unix()
 		if last_processed[item.Topic] < now - Config.GetInt64("Frequency") {
 			last_processed[item.Topic] = now
-			if Config.GetBool("debug") {
-				fmt.Printf("Processing image from %s\n", item.Topic)
-			}
+			logger.Debug().Msgf("Processing image from %s", item.Topic)
 			ProcessImage(item)
 		} else {
-			if Config.GetBool("debug") {
-				fmt.Printf("Skipping image from %s\n", item.Topic)
-			}
+			logger.Debug().Msgf("Skipping image from %s", item.Topic)
 		}
 	}
 }
@@ -105,16 +101,16 @@ func ProcessImage(mimage MQTT_Item) {
 	multipartWriter := multipart.NewWriter(upload_body)
 	part, err := multipartWriter.CreateFormFile("image", "snap.jpeg")
 	if err != nil {
-		fmt.Println(err.Error())
+		logger.Error().Msgf("Error reading image: %v",err.Error())
 	}
 
 	// copy image into form
 	copied, err := io.Copy(part, bytes.NewReader(mimage.Data))
 	if err != nil {
-		fmt.Println(err.Error())
+		logger.Error().Msgf("Error copying image into form: %v",err.Error())
 	} else {
 		if copied < 1 {
-			fmt.Println("empty copy but no error")
+			logger.Warn().Msg("empty copying image into form but no error reported")
 		}
 	}
 
@@ -124,25 +120,25 @@ func ProcessImage(mimage MQTT_Item) {
 	// send request
 	req, err := http.NewRequest("POST", Config.GetString("detection_url"), upload_body)
 	if err != nil {
-		fmt.Println(err.Error())
+		logger.Warn().Msgf("Error posting form to ai server %v", err.Error())
 		return
 	}
 	req.Header.Set("Content-Type", multipartWriter.FormDataContentType())
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		fmt.Println(err.Error())
+		logger.Warn().Msgf("Error reading result from ai server: %v", err.Error())
 		return
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode > 299 || resp.StatusCode < 200{
-		fmt.Printf("non-2xx code received: %d\n",resp.StatusCode)
+		logger.Warn().Msgf("non-2xx code received: %d",resp.StatusCode)
 		return
 	}
 	body, _ := io.ReadAll(resp.Body)
 	var results ai_results
 	err = json.Unmarshal(body, &results)
 	if err != nil {
-		fmt.Println(err.Error())
+		logger.Warn().Msgf("Unable to unmarshal ai result: %v", err.Error())
 		return
 	}
 	//cache the bloody thing
@@ -159,15 +155,11 @@ func ProcessImage(mimage MQTT_Item) {
 		}
 	}
 	if person && confidence >= float32(Config.GetFloat64("min_confidence")){
-		if Config.GetBool("debug") {
-			fmt.Printf("%s occupied: %f\n", mimage.Topic, confidence)
-		}
+		logger.Debug().Msgf("%s occupied: %f", mimage.Topic, confidence)
 		// last_occupied[mimage.Topic] = now
 		mimage.Analysis_result = OCCUPIED
 	} else {
-		if Config.GetBool("debug") {
-			fmt.Printf("%s unoccupied\n", mimage.Topic)
-		}
+		logger.Debug().Msgf("%s unoccupied", mimage.Topic)
 		mimage.Analysis_result = UNOCCUPIED
 	}
 	results_channel <- mimage
@@ -200,9 +192,7 @@ func OccupancyManagerRoutine() {
 			cam_opinion = true
 		} else if item.Analysis_result == UNOCCUPIED {
 			if room.last_occupied < now - model.RoomOccupancyPeriod(item.Room) {
-				if Config.GetBool("debug") {
-					fmt.Printf("%s OCCUPANCY PERIOD EXPIRED\n", item.Room)
-				}
+				logger.Debug().Msgf("%s OCCUPANCY PERIOD EXPIRED", item.Room)
 				room.Unoccupied()
 				cam_opinion = false
 			} else {
@@ -235,7 +225,7 @@ func MotionManagerRoutine() {
 	for {
 		item := <- motion_channel
 		//process data - handle multiple on options?
-		fmt.Printf("%s motion %s\n", item.Room, string(item.Data))
+		logger.Info().Msgf("%s motion %s", item.Room, string(item.Data))
 		if string(item.Data) == "OFF" || string(item.Data) == "OPEN"{
 			item.Analysis_result = MOTION_STOP
 			results_channel <- item
@@ -401,18 +391,15 @@ func Init(){
 	go MotionManagerRoutine()
 }
 
-// func onNewConfig(){
-// 	MqttInit()
-// 	model.BuildModel()
-// 	fmt.Println("New config live")
-// }
 
 func main() {
+	LogInit("trace")
 	setupConfig()
+	registerNewConfigListener(func(){LogInit(Config.GetString("log_level"))})
 	registerNewConfigListener(func(){model.BuildModel()})
 	registerNewConfigListener(MqttInit)
 	if Config.GetBool("insecure_tls") {
-		fmt.Println("disabling tls")
+		logger.Debug().Msg("disabling tls")
 		http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	}
 	onNewConfig()
@@ -425,6 +412,6 @@ func main() {
 	registerNewConfigListener(func(){monitor.Restart()})
 	cam_forwarder.MakeCamForwarder()
 	cam_forwarder.Start()
-	fmt.Println("ready")
+	logger.Info().Msg("ready")
 	select {} //block forever
 }

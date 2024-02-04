@@ -34,9 +34,9 @@ func (s *MonitorServer)Start() error{
 		s.running.Lock()
 		s.srv = &http.Server{Addr: fmt.Sprintf(":%d",Config.GetInt("details_port"))}
 		if err := s.srv.ListenAndServe(); err != http.ErrServerClosed {
-			fmt.Printf("Problem loading monitor server: %v\n", err)
+			logger.Warn().Msgf("Problem loading monitor server: %v", err)
 		}
-		fmt.Println("monitor server shutdown")
+		logger.Debug().Msg("monitor server shutdown")
 		s.running.Unlock()
 	}()
 	return nil
@@ -57,16 +57,16 @@ func (s *MonitorServer)AddRawHandler(path string, handler http.Handler){
 // }
 
 func (s *MonitorServer)Restart(){
-	fmt.Println("restarting monitor server")
+	logger.Debug().Msg("restarting monitor server")
 	if ! s.running.TryLock() { //only shutdown if not running
-		fmt.Println("monitor server running, shutting it down")
+		logger.Debug().Msg("monitor server running, shutting it down")
 		s.srv.Shutdown(context.TODO())
 	} else {
 		s.running.Unlock()
 	}
-	fmt.Println("waiting for shutdown")
+	logger.Debug().Msg("waiting for shutdown")
 	s.running.Lock() //when server shuts down it will unlock, so wait for unlock
-	fmt.Println("http not running - good for startup")
+	logger.Debug().Msg("http not running - good for startup")
 	s.running.Unlock()
 	s.Start()
 }
