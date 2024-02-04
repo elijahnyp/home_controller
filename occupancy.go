@@ -72,6 +72,9 @@ Message Router
 func receiver(client MQTT.Client, message MQTT.Message) {
 	// fmt.Printf("Topic: %s, Message: %s\n", message.Topic(), string(message.Payload()))
 	// fmt.Printf("Message Received at topic %s\n", message.Topic())
+	if Config.GetBool("debug") {
+		fmt.Printf("Message Received on topic %s",message.Topic())
+	}
 	var mitem MQTT_Item
 	mitem.Data = message.Payload()
 	mitem.Topic = message.Topic()
@@ -216,11 +219,15 @@ func ProcessImage(mimage MQTT_Item) {
 		}
 	}
 	if person && confidence >= float32(Config.GetFloat64("min_confidence")){
-		fmt.Printf("%s occupied: %f\n", mimage.Topic, confidence)
+		if Config.GetBool("debug") {
+			fmt.Printf("%s occupied: %f\n", mimage.Topic, confidence)
+		}
 		// last_occupied[mimage.Topic] = now
 		mimage.Analysis_result = OCCUPIED
 	} else {
-		fmt.Printf("%s unoccupied\n", mimage.Topic)
+		if Config.GetBool("debug") {
+			fmt.Printf("%s unoccupied\n", mimage.Topic)
+		}
 		mimage.Analysis_result = UNOCCUPIED
 	}
 	results_channel <- mimage
