@@ -39,7 +39,7 @@ func receiver(client MQTT.Client, message MQTT.Message) {
 		mitem.Type = OCCUPANCY
 		//do something here
 	default:
-		logger.Debug().Msgf("topic %s not found in model.  Fix subscription or add to model\n", message.Topic())
+		logger.Debug().Msgf("topic %s not found in model.  Fix subscription or add to model", message.Topic())
 	}
 }
 
