@@ -15,7 +15,7 @@ import (
 	"image"
 	"image/jpeg"
 	"crypto/tls"
-
+	"strconv"
 )
 
 const ( //message types
@@ -225,15 +225,30 @@ func MotionManagerRoutine() {
 	for {
 		item := <- motion_channel
 		//process data - handle multiple on options?
-		logger.Info().Msgf("%s motion %s", item.Room, string(item.Data))
-		if string(item.Data) == "OFF" || string(item.Data) == "OPEN"{
-			item.Analysis_result = MOTION_STOP
-			results_channel <- item
-			continue
-		} else if string(item.Data) == "ON" || string(item.Data) == "CLOSED"{
-			item.Analysis_result = MOTION_START
-			results_channel <- item
-			continue
+		// logger.Debug().Msgf("%s motion %s", item.Room, string(item.Data))
+		if numd, err := strconv.Atoi(string(item.Data)); err == nil {
+			logger.Debug().Msgf("%s motion integer received: %d",item.Room,numd)
+			switch numd{
+			case 0:
+				item.Analysis_result = MOTION_STOP
+				results_channel <- item
+				continue
+			default:
+				item.Analysis_result = MOTION_START
+				results_channel <- item
+				continue
+			}
+		} else {
+			logger.Debug().Msgf("%s motion string received: %s",item.Room, string(item.Data))
+			if string(item.Data) == "OFF" || string(item.Data) == "OPEN"{
+				item.Analysis_result = MOTION_STOP
+				results_channel <- item
+				continue
+			} else if string(item.Data) == "ON" || string(item.Data) == "CLOSED"{
+				item.Analysis_result = MOTION_START
+				results_channel <- item
+				continue
+			}
 		}
 	}
 }
