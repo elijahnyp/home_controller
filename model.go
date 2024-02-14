@@ -16,6 +16,7 @@ type Room struct {
 	Occupancy_topic string `mapstructure:"occupancy_topic"`
 	Motion_topics []string `mapstructure:"motion_topics"`
 	Pic_topics []string `mapstructure:"pic_topics"`
+	Door_topics []string `mapstructure:"door_dopics"`
 	Occupancy_period int64 `mapstructure:"occupancy_period"`
 }
 
@@ -67,6 +68,11 @@ func (m Model) FindRoomByTopic(topic string) (string){
 				return entry.Name
 			}
 		}
+		for _, dt := range(entry.Door_topics){
+			if dt == topic{
+				return entry.Name
+			}
+		}
 	}
 	return ""
 }
@@ -84,6 +90,11 @@ func (m Model) FindTopicType(topic string) (int){
 		for _, pt := range(entry.Pic_topics){
 			if pt == topic{
 				return PIC
+			}
+		}
+		for _, dt := range(entry.Door_topics){
+			if dt == topic{
+				return DOOR
 			}
 		}
 	}

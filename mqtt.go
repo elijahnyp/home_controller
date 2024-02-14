@@ -8,7 +8,7 @@ import (
 var client MQTT.Client
 
 var connectHandler MQTT.OnConnectHandler = func(client MQTT.Client) {
-    logger.Debug().Msg("Connected")
+    logger.Info().Msg("Connected")
 	for _, topic := range model.SubscribeTopics() {
 		if token := client.Subscribe(topic, 0, nil); token.Wait() && token.Error() != nil {
 			logger.Panic().Msgf("Error Subscribing: %v",fmt.Errorf("%v", token.Error()))
@@ -18,11 +18,11 @@ var connectHandler MQTT.OnConnectHandler = func(client MQTT.Client) {
 }
 
 var connectLostHandler MQTT.ConnectionLostHandler = func(client MQTT.Client, err error) {
-    logger.Debug().Msgf("Connect lost: %v", err)
+    logger.Info().Msgf("Connect lost: %v", err)
 }
 
 func receiver(client MQTT.Client, message MQTT.Message) {
-	logger.Debug().Msgf("Message Received on topic %s",message.Topic())
+	logger.Info().Msgf("Message Received on topic %s",message.Topic())
 	var mitem MQTT_Item
 	mitem.Data = message.Payload()
 	mitem.Topic = message.Topic()
@@ -30,14 +30,20 @@ func receiver(client MQTT.Client, message MQTT.Message) {
 	switch model.FindTopicType(message.Topic()) {
 	case PIC:
 		mitem.Type = PIC
+		logger.Debug().Msgf("image message received: queue len %v",len(image_channel))
 		image_channel <- mitem
 	case MOTION:
 		mitem.Type = MOTION
+		logger.Debug().Msgf("motion message received: queue len %v",len(motion_channel))
 		motion_channel <- mitem
 		//do something here
 	case OCCUPANCY:
 		mitem.Type = OCCUPANCY
 		//do something here
+	case DOOR:
+		mitem.Type = DOOR
+		logger.Debug().Msgf("door message received: queue len %v",len(door_channel))
+		door_channel <- mitem
 	default:
 		logger.Debug().Msgf("topic %s not found in model.  Fix subscription or add to model", message.Topic())
 	}

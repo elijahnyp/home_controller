@@ -22,6 +22,7 @@ const ( //message types
 	PIC = iota
 	MOTION = iota
 	OCCUPANCY = iota
+	DOOR = iota
 )
 
 const ( //analysis results
@@ -29,6 +30,8 @@ const ( //analysis results
 	UNOCCUPIED = iota
 	MOTION_START = iota
 	MOTION_STOP = iota
+	DOOR_OPEN = iota
+	DOOR_CLOSED = iota
 )
 
 type ai_result struct {
@@ -79,6 +82,15 @@ Routines, dependencies, and Routine Init
 var image_channel = make(chan MQTT_Item, 10)
 var results_channel = make(chan MQTT_Item, 10)
 var motion_channel = make(chan MQTT_Item, 10)
+var door_channel = make(chan MQTT_Item, 10)
+
+// //door processing
+// func ProcessDoorRoutine(){
+// 	for {
+// 		item := <- door_channel
+		
+// 	}
+// }
 
 //image processing
 func ProcessImageRoutine(){
@@ -88,7 +100,7 @@ func ProcessImageRoutine(){
 		if last_processed[item.Topic] < now - Config.GetInt64("Frequency") {
 			last_processed[item.Topic] = now
 			logger.Debug().Msgf("Processing image from %s", item.Topic)
-			ProcessImage(item)
+			go ProcessImage(item)
 		} else {
 			logger.Debug().Msgf("Skipping image from %s", item.Topic)
 		}
