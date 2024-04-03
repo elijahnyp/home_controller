@@ -2,7 +2,7 @@ kind: Service
 apiVersion: v1
 metadata:
   labels:
-    teleport-app: pihole
+    teleport-app: home_controller
     app: occupancy-controller
   name: occupancy-controller-service
 spec:
