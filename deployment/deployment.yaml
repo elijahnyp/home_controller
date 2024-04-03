@@ -5,6 +5,8 @@ metadata:
     teleport-app: home_controller
     app: occupancy-controller
   name: occupancy-controller-service
+  annotations:
+    teleport.dev/name: home controller
 spec:
   ports:
     - name: monitoring
