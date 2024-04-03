@@ -2,7 +2,7 @@
 	"broker_uri": "tls://mqtt:8883",
 	"password": "password",
 	"username": "username",
-	"id": "34tsklfgj4i",
+	"id_base": "34tsklfgj4i",
 	"cleansess": true,
     "log_level": "info",
     "min_confidence": 0.5,

@@ -16,22 +16,8 @@ import (
 	"image/jpeg"
 	"crypto/tls"
 	"strconv"
-)
-
-const ( //message types
-	PIC = iota
-	MOTION = iota
-	OCCUPANCY = iota
-	DOOR = iota
-)
-
-const ( //analysis results
-	OCCUPIED = iota
-	UNOCCUPIED = iota
-	MOTION_START = iota
-	MOTION_STOP = iota
-	DOOR_OPEN = iota
-	DOOR_CLOSED = iota
+	MQTT "github.com/eclipse/paho.mqtt.golang"
+	. "github.com/elijahnyp/home_controller/util"
 )
 
 type ai_result struct {
@@ -66,6 +52,8 @@ var cache = make(map[string]ImageCacheItem)
 
 var model Model
 
+var cam_forwarder CamForwarder
+
 /* ***************************************
 Message Router
 */
@@ -99,10 +87,10 @@ func ProcessImageRoutine(){
 		now := time.Now().Unix()
 		if last_processed[item.Topic] < now - Config.GetInt64("Frequency") {
 			last_processed[item.Topic] = now
-			logger.Debug().Msgf("Processing image from %s", item.Topic)
+			Logger.Debug().Msgf("Processing image from %s", item.Topic)
 			go ProcessImage(item)
 		} else {
-			logger.Debug().Msgf("Skipping image from %s", item.Topic)
+			Logger.Debug().Msgf("Skipping image from %s", item.Topic)
 		}
 	}
 }
@@ -113,16 +101,16 @@ func ProcessImage(mimage MQTT_Item) {
 	multipartWriter := multipart.NewWriter(upload_body)
 	part, err := multipartWriter.CreateFormFile("image", "snap.jpeg")
 	if err != nil {
-		logger.Error().Msgf("Error reading image: %v",err.Error())
+		Logger.Error().Msgf("Error reading image: %v",err.Error())
 	}
 
 	// copy image into form
 	copied, err := io.Copy(part, bytes.NewReader(mimage.Data))
 	if err != nil {
-		logger.Error().Msgf("Error copying image into form: %v",err.Error())
+		Logger.Error().Msgf("Error copying image into form: %v",err.Error())
 	} else {
 		if copied < 1 {
-			logger.Warn().Msg("empty copying image into form but no error reported")
+			Logger.Warn().Msg("empty copying image into form but no error reported")
 		}
 	}
 
@@ -132,25 +120,25 @@ func ProcessImage(mimage MQTT_Item) {
 	// send request
 	req, err := http.NewRequest("POST", Config.GetString("detection_url"), upload_body)
 	if err != nil {
-		logger.Warn().Msgf("Error posting form to ai server %v", err.Error())
+		Logger.Warn().Msgf("Error posting form to ai server %v", err.Error())
 		return
 	}
 	req.Header.Set("Content-Type", multipartWriter.FormDataContentType())
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		logger.Warn().Msgf("Error reading result from ai server: %v", err.Error())
+		Logger.Warn().Msgf("Error reading result from ai server: %v", err.Error())
 		return
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode > 299 || resp.StatusCode < 200{
-		logger.Warn().Msgf("non-2xx code received: %d",resp.StatusCode)
+		Logger.Warn().Msgf("non-2xx code received: %d",resp.StatusCode)
 		return
 	}
 	body, _ := io.ReadAll(resp.Body)
 	var results ai_results
 	err = json.Unmarshal(body, &results)
 	if err != nil {
-		logger.Warn().Msgf("Unable to unmarshal ai result: %v", err.Error())
+		Logger.Warn().Msgf("Unable to unmarshal ai result: %v", err.Error())
 		return
 	}
 	//cache the bloody thing
@@ -167,11 +155,11 @@ func ProcessImage(mimage MQTT_Item) {
 		}
 	}
 	if person && confidence >= float32(Config.GetFloat64("min_confidence")){
-		logger.Debug().Msgf("%s occupied: %f", mimage.Topic, confidence)
+		Logger.Debug().Msgf("%s occupied: %f", mimage.Topic, confidence)
 		// last_occupied[mimage.Topic] = now
 		mimage.Analysis_result = OCCUPIED
 	} else {
-		logger.Debug().Msgf("%s unoccupied", mimage.Topic)
+		Logger.Debug().Msgf("%s unoccupied", mimage.Topic)
 		mimage.Analysis_result = UNOCCUPIED
 	}
 	results_channel <- mimage
@@ -195,7 +183,7 @@ func OccupancyManagerRoutine() {
 		occupancy_topic := model.FindOccupancyTopicByRoom(item.Room)
 		cam_opinion := true
 		var message string
-		room := model_status.room_status[item.Room]
+		room := model.ModelStatus().Room_status[item.Room]
 		if item.Analysis_result == OCCUPIED {
 			// if room.last_occupied <= now { //do this so we can set future occupied
 			// 	room.last_occupied = now
@@ -203,8 +191,8 @@ func OccupancyManagerRoutine() {
 			room.Occupied()
 			cam_opinion = true
 		} else if item.Analysis_result == UNOCCUPIED {
-			if room.last_occupied < now - model.RoomOccupancyPeriod(item.Room) {
-				logger.Debug().Msgf("%s OCCUPANCY PERIOD EXPIRED", item.Room)
+			if room.GetLastOccupied() < now - model.RoomOccupancyPeriod(item.Room) {
+				Logger.Debug().Msgf("%s OCCUPANCY PERIOD EXPIRED", item.Room)
 				room.Unoccupied()
 				cam_opinion = false
 			} else {
@@ -222,13 +210,13 @@ func OccupancyManagerRoutine() {
 			//  room.motion_state = false
 			room.Motion(false)
 		} 
-		if ! cam_opinion && ! room.motion_state {
+		if ! cam_opinion && ! room.GetMotionState() {
 			message = "false"
 		} else {
 			message = "true"
 		}
-		model_status.room_status[item.Room] = room
-		token := client.Publish(occupancy_topic, byte(0), false, message)
+		model.UpdateRoomStatus(item.Room, room)
+		token := Client.Publish(occupancy_topic, byte(0), false, message)
 		token.Wait() //this is VERY BAD
 	}
 }
@@ -237,9 +225,9 @@ func MotionManagerRoutine() {
 	for {
 		item := <- motion_channel
 		//process data - handle multiple on options?
-		// logger.Debug().Msgf("%s motion %s", item.Room, string(item.Data))
+		// Logger.Debug().Msgf("%s motion %s", item.Room, string(item.Data))
 		if numd, err := strconv.Atoi(string(item.Data)); err == nil {
-			logger.Debug().Msgf("%s motion integer received: %d",item.Room,numd)
+			Logger.Debug().Msgf("%s motion integer received: %d",item.Room,numd)
 			switch numd{
 			case 0:
 				item.Analysis_result = MOTION_STOP
@@ -251,7 +239,7 @@ func MotionManagerRoutine() {
 				continue
 			}
 		} else {
-			logger.Debug().Msgf("%s motion string received: %s",item.Room, string(item.Data))
+			Logger.Debug().Msgf("%s motion string received: %s",item.Room, string(item.Data))
 			if string(item.Data) == "OFF" || string(item.Data) == "OPEN"{
 				item.Analysis_result = MOTION_STOP
 				results_channel <- item
@@ -399,11 +387,11 @@ func StatusOverview(w http.ResponseWriter, r *http.Request){
 	if r.Method == "GET" {
 		w.Header().Add("Content-Type", "text/html")
 		io.WriteString(w, "<html><body><table>")
-		for room, status := range model_status.room_status{
+		for room, status := range model.ModelStatus().Room_status{
 			io.WriteString(w, "<tr>")
 			io.WriteString(w, fmt.Sprintf("<td>%s</td>",room))
-			io.WriteString(w, fmt.Sprintf("<td>%d</td>",now - status.last_occupied))
-			io.WriteString(w, fmt.Sprintf("<td>%v</td>",status.motion_state))
+			io.WriteString(w, fmt.Sprintf("<td>%d</td>",now - status.GetLastOccupied()))
+			io.WriteString(w, fmt.Sprintf("<td>%v</td>",status.GetMotionState()))
 			io.WriteString(w, "</tr>")
 		}
 		io.WriteString(w, "</body></html>")
@@ -418,27 +406,62 @@ func Init(){
 	go MotionManagerRoutine()
 }
 
+func subscribeOccupancyTopics(){
+	for _, topic := range model.SubscribeTopics() {
+		RegisterMQTTSubscription(topic,receiver)
+	}
+}
+
+
+func receiver(client MQTT.Client, message MQTT.Message) {
+	Logger.Info().Msgf("Message Received on topic %s",message.Topic())
+	var mitem MQTT_Item
+	mitem.Data = message.Payload()
+	mitem.Topic = message.Topic()
+	mitem.Room = model.FindRoomByTopic(message.Topic())
+	switch model.FindTopicType(message.Topic()) {
+	case PIC:
+		mitem.Type = PIC
+		Logger.Debug().Msgf("image message received: queue len %v",len(image_channel))
+		image_channel <- mitem
+	case MOTION:
+		mitem.Type = MOTION
+		Logger.Debug().Msgf("motion message received: queue len %v",len(motion_channel))
+		motion_channel <- mitem
+		//do something here
+	case OCCUPANCY:
+		mitem.Type = OCCUPANCY
+		//do something here
+	case DOOR:
+		mitem.Type = DOOR
+		Logger.Debug().Msgf("door message received: queue len %v",len(door_channel))
+		door_channel <- mitem
+	default:
+		Logger.Debug().Msgf("topic %s not found in model.  Fix subscription or add to model", message.Topic())
+	}
+}
 
 func main() {
 	LogInit("trace")
-	setupConfig()
-	registerNewConfigListener(func(){LogInit(Config.GetString("log_level"))})
-	registerNewConfigListener(func(){model.BuildModel()})
-	registerNewConfigListener(MqttInit)
+	SetupConfig()
+	RegisterNewConfigListener(func(){LogInit(Config.GetString("log_level"))})
+	RegisterNewConfigListener(func(){model.BuildModel()})
+	RegisterNewConfigListener(subscribeOccupancyTopics)
+	RegisterNewConfigListener(MqttInit)
 	if Config.GetBool("insecure_tls") {
-		logger.Debug().Msg("disabling tls")
+		Logger.Debug().Msg("disabling tls")
 		http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	}
-	onNewConfig()
+	OnNewConfig()
 	Init()
 	monitor := NewMonitorServer()
 	monitor.AddHandler("/image", HttpImage)
 	monitor.AddHandler("/room", RoomOverview)
 	monitor.AddHandler("/room_status", StatusOverview)
 	monitor.Start()
-	registerNewConfigListener(func(){monitor.Restart()})
+	RegisterNewConfigListener(func(){monitor.Restart()})
 	cam_forwarder.MakeCamForwarder()
 	cam_forwarder.Start()
-	logger.Info().Msg("ready")
+	Logger.Info().Msg("ready")
 	select {} //block forever
 }
