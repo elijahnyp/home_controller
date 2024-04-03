@@ -7,6 +7,7 @@ metadata:
   name: occupancy-controller-service
   annotations:
     teleport.dev/name: home-controller
+    teleport.dev/protocol: http
 spec:
   ports:
     - name: monitoring
