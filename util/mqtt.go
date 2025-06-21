@@ -9,15 +9,35 @@ var Client MQTT.Client
 
 var subscriptions map[string]MQTT.MessageHandler
 
+var connectHandlers map[string]func(MQTT.Client)
+
 var connectHandler MQTT.OnConnectHandler = func(client MQTT.Client) {
     Logger.Info().Msg("Connected")
 	subscribe()
+	client.Publish("hab/online", 0, false, "online").Wait()
+	if connectHandlers == nil {
+		connectHandlers = make(map[string]func(client MQTT.Client))
+	}
+	for _,handler := range connectHandlers {
+		handler(client)
+	}
 	// for _, topic := range model.SubscribeTopics() {
 	// 	if token := client.Subscribe(topic, 0, nil); token.Wait() && token.Error() != nil {
 	// 		Logger.Panic().Msgf("Error Subscribing: %v",fmt.Errorf("%v", token.Error()))
 	// 		// os.Exit(1)
 	// 	}
 	// }
+}
+
+func RegisterMQTTConnectHook(name string, handler func(MQTT.Client)){
+	if connectHandlers == nil {
+		connectHandlers = make(map[string]func(client MQTT.Client))
+	}
+	if handler == nil{
+		delete(connectHandlers, name)
+	} else {
+		connectHandlers[name] = handler
+	}
 }
 
 func subscribe(){
@@ -58,9 +78,9 @@ func MqttInit(){
 	opts.SetPassword(Config.GetString("password"))
 	opts.SetCleanSession(Config.GetBool("cleansess"))
 	opts.SetAutoReconnect(true)
+	opts.SetWill("hab/online","offline", 0, false)
 	opts.OnConnectionLost = connectLostHandler
 	opts.OnConnect = connectHandler
-
 	opts.SetDefaultPublishHandler(receiver)
 
 	if Client != nil {

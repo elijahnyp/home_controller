@@ -387,11 +387,13 @@ func StatusOverview(w http.ResponseWriter, r *http.Request){
 	if r.Method == "GET" {
 		w.Header().Add("Content-Type", "text/html")
 		io.WriteString(w, "<html><body><table>")
+		io.WriteString(w,"<tr><th>Room</th><th>Last Occupied (seconds ago)</th><th>Motion State</th><th>Timeout</th></tr>")
 		for room, status := range model.ModelStatus().Room_status{
 			io.WriteString(w, "<tr>")
-			io.WriteString(w, fmt.Sprintf("<td>%s</td>",room))
+			io.WriteString(w, fmt.Sprintf("<td><a href=\"/room?room=%s\">%s</a></td>",room,room))
 			io.WriteString(w, fmt.Sprintf("<td>%d</td>",now - status.GetLastOccupied()))
 			io.WriteString(w, fmt.Sprintf("<td>%v</td>",status.GetMotionState()))
+			io.WriteString(w, fmt.Sprintf("<td>%d</td>",model.RoomOccupancyPeriod(room)))
 			io.WriteString(w, "</tr>")
 		}
 		io.WriteString(w, "</body></html>")
@@ -447,6 +449,9 @@ func main() {
 	RegisterNewConfigListener(func(){LogInit(Config.GetString("log_level"))})
 	RegisterNewConfigListener(func(){model.BuildModel()})
 	RegisterNewConfigListener(subscribeOccupancyTopics)
+	RegisterMQTTConnectHook("haadvertise", func(client MQTT.Client) {
+		AdvertiseHA(model.Rooms, client)
+	})
 	RegisterNewConfigListener(MqttInit)
 	if Config.GetBool("insecure_tls") {
 		Logger.Debug().Msg("disabling tls")

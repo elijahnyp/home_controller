@@ -35,7 +35,7 @@ type Location struct {
 	Name string `mapstructure:"name"`
 }
 
-func (l Location)GetCoordinages() (latitude float64, longitude float64){
+func (l Location)GetCoordinates() (latitude float64, longitude float64){
 	return l.Lat, l.Lon
 }
 

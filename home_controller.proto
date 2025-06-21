@@ -1,8 +1,0 @@
-syntax = "proto3";
-
-package home_controller;
-
-message Device {
-    uint status = 1;
-    state state = 2;
-}
