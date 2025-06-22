@@ -31,6 +31,7 @@ type ai_result struct {
 
 type ai_results struct {
 	Success bool `json:"success"`
+	Timestamp int64 `json:"timestamp"`
 	Predictions []ai_result `json:"predictions"`
 }
 
@@ -141,6 +142,7 @@ func ProcessImage(mimage MQTT_Item) {
 		Logger.Warn().Msgf("Unable to unmarshal ai result: %v", err.Error())
 		return
 	}
+	results.Timestamp = time.Now().Unix()
 	//cache the bloody thing
 	cache[mimage.Topic] = ImageCacheItem{mimage.Data,results}
 	var person = false
@@ -400,6 +402,57 @@ func StatusOverview(w http.ResponseWriter, r *http.Request){
 	}
 }
 
+type modelapiresponseitem struct {
+	Room Room `json:"room"`
+	AI map[string]ai_results `json:"ai"`
+}
+
+func ModelApi(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "GET" {
+		answer := make(map[string]modelapiresponseitem)
+		r.ParseForm()
+		room := r.FormValue("room")
+		if room != "" {
+			for _, r := range model.Rooms {
+				if r.Name == room {
+					ai := make(map[string]ai_results)
+					for _, t := range r.Pic_topics {
+						ai[t] = cache[t].results
+					}
+					w.Header().Add("Content-Type", "application/json")
+					answer[r.Name] = modelapiresponseitem{
+						Room: r,
+						AI: ai,
+					}
+					data, _ := json.Marshal(answer)
+					w.Write(data)
+					return
+				}
+			}
+		} else {
+			for _, r := range model.Rooms {
+				ai := make(map[string]ai_results)
+				for _, t := range r.Pic_topics {
+					ai[t] = cache[t].results
+				}
+				w.Header().Add("Content-Type", "application/json")
+				answer[r.Name] = modelapiresponseitem{
+					Room: r,
+					AI: ai,
+				}
+			}
+			data, _ := json.Marshal(answer)
+			w.Write(data)
+			return
+		}
+		w.WriteHeader(404)
+		io.WriteString(w, "Room not found")
+	} else {
+		w.WriteHeader(400)
+		io.WriteString(w, "Bad Request Method\n")
+	}
+}
+
 //init
 func Init(){
 	http.DefaultClient.Timeout = 10 * time.Second;
@@ -463,6 +516,7 @@ func main() {
 	monitor.AddHandler("/image", HttpImage)
 	monitor.AddHandler("/room", RoomOverview)
 	monitor.AddHandler("/room_status", StatusOverview)
+	monitor.AddHandler("/model", ModelApi)
 	monitor.Start()
 	RegisterNewConfigListener(func(){monitor.Restart()})
 	cam_forwarder.MakeCamForwarder()
