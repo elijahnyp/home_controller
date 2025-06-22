@@ -522,5 +522,16 @@ func main() {
 	cam_forwarder.MakeCamForwarder()
 	cam_forwarder.Start()
 	Logger.Info().Msg("ready")
+	go OnlinePinger() //start the online pinger
 	select {} //block forever
+}
+
+// online pinger
+func OnlinePinger() {
+	for {
+		if token := Client.Publish("hab/online", 0, false, "online"); token.Wait() && token.Error() != nil {
+			Logger.Error().Msgf("Error publishing online message: %v", token.Error())
+		}
+		time.Sleep(10 * time.Second)
+	}
 }
