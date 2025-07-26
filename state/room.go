@@ -6,7 +6,7 @@ type Room interface {
 }
 
 type RoomState struct {
-	Lights []Light
-	Sensors []Sensor
+	Lights   []Light
+	Sensors  []Sensor
 	Occupied bool
 }

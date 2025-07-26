@@ -6,7 +6,6 @@ package util
 // "github.com/prometheus/client_golang/prometheus"
 // )
 
-
 // type ModelMetrics struct {
 // 	Rooms map[string]RoomMetrics
 // }

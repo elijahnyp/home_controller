@@ -1,10 +1,11 @@
 package util
 
 import (
-	"github.com/rs/zerolog"
 	"os"
-	"time"
 	"strings"
+	"time"
+
+	"github.com/rs/zerolog"
 )
 
 var (
