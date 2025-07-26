@@ -4,13 +4,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"sync"
 	"testing"
 	"time"
 )
-
-// Global mutex to serialize config access in tests
-var configMutex sync.Mutex
 
 func TestNewMonitorServer(t *testing.T) {
 	server := NewMonitorServer()
@@ -87,9 +83,6 @@ func TestMonitorServer_AddRawHandler(t *testing.T) {
 }
 
 func TestMonitorServer_StartAndRestart(t *testing.T) {
-	configMutex.Lock()
-	defer configMutex.Unlock()
-	
 	// Set a test port for this test
 	Config.Set("details_port", 0) // Use port 0 to get any available port
 
@@ -100,7 +93,7 @@ func TestMonitorServer_StartAndRestart(t *testing.T) {
 	if err != nil {
 		t.Errorf("Start() should not return error, got: %v", err)
 	}
-
+	
 	// Give server time to start
 	time.Sleep(100 * time.Millisecond)
 
@@ -118,9 +111,6 @@ func TestMonitorServer_StartAndRestart(t *testing.T) {
 }
 
 func TestMonitorServer_Integration(t *testing.T) {
-	configMutex.Lock()
-	defer configMutex.Unlock()
-	
 	// Use an available port for testing
 	testPort := 8899
 	Config.Set("details_port", testPort)
@@ -173,9 +163,6 @@ func TestMonitorServer_Integration(t *testing.T) {
 }
 
 func TestMonitorServer_ConcurrentAccess(t *testing.T) {
-	configMutex.Lock()
-	defer configMutex.Unlock()
-	
 	Config.Set("details_port", 8904) // Use a different port for this test
 
 	server := NewMonitorServer()
@@ -205,27 +192,29 @@ func TestMonitorServer_ConcurrentAccess(t *testing.T) {
 		}
 	}
 
-	// At least one should succeed, but due to timing, we might get different results
-	// Let's be more lenient and just check that not all failed
-	if successCount == 0 {
-		t.Error("Expected at least one successful start")
+	// We expect exactly one success and two errors (server already running)
+	if successCount != 1 {
+		t.Errorf("Expected exactly 1 successful start, got %d", successCount)
 	}
-	if successCount+errorCount != 3 {
-		t.Errorf("Expected 3 total results, got %d", successCount+errorCount)
+	if errorCount != 2 {
+		t.Errorf("Expected exactly 2 'already running' errors, got %d", errorCount)
 	}
 
-	t.Logf("Concurrent access test: %d successes, %d errors", successCount, errorCount)
+	// Clean up
+	server.Restart()
+	time.Sleep(200 * time.Millisecond)
 }
 
 func TestMonitorServer_PortConfiguration(t *testing.T) {
-	configMutex.Lock()
-	defer configMutex.Unlock()
-	
 	// Test with different port configurations sequentially to avoid race conditions
 	testPorts := []int{8900, 8901, 8902}
 
 	for _, port := range testPorts {
+		port := port // capture loop variable
 		t.Run(fmt.Sprintf("Port_%d", port), func(t *testing.T) {
+			// Don't run in parallel to avoid config races
+			// t.Parallel() - commented out intentionally
+			
 			// Save original config
 			originalPort := Config.GetInt("details_port")
 
@@ -237,7 +226,6 @@ func TestMonitorServer_PortConfiguration(t *testing.T) {
 
 			server := NewMonitorServer()
 			err := server.Start()
-
 			if err != nil {
 				t.Errorf("Failed to start server on port %d: %v", port, err)
 				return
@@ -256,9 +244,6 @@ func TestMonitorServer_PortConfiguration(t *testing.T) {
 }
 
 func TestMonitorServer_Shutdown(t *testing.T) {
-	configMutex.Lock()
-	defer configMutex.Unlock()
-	
 	// Save original config
 	originalPort := Config.GetInt("details_port")
 	Config.Set("details_port", 8903)
