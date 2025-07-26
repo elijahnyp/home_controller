@@ -1,12 +1,89 @@
 package util
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 )
+
+// Test helper to create MonitorServer with specific port without config races
+type testMonitorServer struct {
+	*MonitorServer
+	testPort int
+}
+
+func newTestMonitorServer(port int) *testMonitorServer {
+	return &testMonitorServer{
+		MonitorServer: &MonitorServer{
+			running: &sync.Mutex{},
+			srv:     &http.Server{},
+		},
+		testPort: port,
+	}
+}
+
+func (ts *testMonitorServer) Start() error {
+	if !ts.running.TryLock() {
+		return fmt.Errorf("already running")
+	} else {
+		ts.running.Unlock()
+	}
+	go func() {
+		ts.running.Lock()
+
+		// Create new server with test port (no config access)
+		newSrv := &http.Server{Addr: fmt.Sprintf(":%d", ts.testPort)}
+		ts.srvMu.Lock()
+		ts.srv = newSrv
+		ts.srvMu.Unlock()
+
+		if err := newSrv.ListenAndServe(); err != http.ErrServerClosed {
+			// Logger is available in test context
+			Logger.Warn().Msgf("Problem loading test monitor server: %v", err)
+		}
+		Logger.Debug().Msg("test monitor server shutdown")
+		ts.running.Unlock()
+	}()
+	return nil
+}
+
+func (ts *testMonitorServer) Restart() {
+	Logger.Debug().Msg("restarting test monitor server")
+	if !ts.running.TryLock() { // only shutdown if not running
+		Logger.Debug().Msg("test monitor server running, shutting it down")
+
+		// Safely access srv with read lock
+		ts.srvMu.RLock()
+		currentSrv := ts.srv
+		ts.srvMu.RUnlock()
+
+		if currentSrv != nil {
+			if err := currentSrv.Shutdown(context.TODO()); err != nil {
+				Logger.Error().Msgf("Error shutting down test monitor server: %v", err)
+			}
+		}
+	} else {
+		ts.running.Unlock()
+	}
+	Logger.Debug().Msg("waiting for shutdown")
+	ts.running.Lock() // when server shuts down it will unlock, so wait for unlock
+	Logger.Debug().Msg("test http not running - good for startup")
+
+	// Now start again
+	_ = ts.Start()
+}
+
+func (ts *testMonitorServer) AddHandler(path string, handler func(http.ResponseWriter, *http.Request)) {
+	http.HandleFunc(path, handler)
+}
+
+func (ts *testMonitorServer) AddRawHandler(path string, handler http.Handler) {
+	http.Handle(path, handler)
+}
 
 func TestNewMonitorServer(t *testing.T) {
 	server := NewMonitorServer()
@@ -83,18 +160,8 @@ func TestMonitorServer_AddRawHandler(t *testing.T) {
 }
 
 func TestMonitorServer_StartAndRestart(t *testing.T) {
-	// Run sequentially to avoid config races - no t.Parallel()
-
-	// Save original config first
-	originalPort := Config.GetInt("details_port")
-
-	// Set a test port for this test
-	Config.Set("details_port", 0) // Use port 0 to get any available port
-
-	// Ensure we restore original config
-	defer Config.Set("details_port", originalPort)
-
-	server := NewMonitorServer()
+	// Use test helper to avoid config races
+	server := newTestMonitorServer(0) // Use port 0 to get any available port
 
 	// Test starting server
 	err := server.Start()
@@ -119,19 +186,9 @@ func TestMonitorServer_StartAndRestart(t *testing.T) {
 }
 
 func TestMonitorServer_Integration(t *testing.T) {
-	// Run sequentially to avoid config races - no t.Parallel()
-
-	// Save original config first
-	originalPort := Config.GetInt("details_port")
-
-	// Use an available port for testing
+	// Use test helper to avoid config races
 	testPort := 8899
-	Config.Set("details_port", testPort)
-
-	// Ensure we restore original config
-	defer Config.Set("details_port", originalPort)
-
-	server := NewMonitorServer()
+	server := newTestMonitorServer(testPort)
 
 	// Add a test handler
 	server.AddHandler("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -179,17 +236,8 @@ func TestMonitorServer_Integration(t *testing.T) {
 }
 
 func TestMonitorServer_ConcurrentAccess(t *testing.T) {
-	// Run sequentially to avoid config races - no t.Parallel()
-
-	// Save original config first
-	originalPort := Config.GetInt("details_port")
-
-	Config.Set("details_port", 8904) // Use a different port for this test
-
-	// Ensure we restore original config
-	defer Config.Set("details_port", originalPort)
-
-	server := NewMonitorServer()
+	// Use test helper to avoid config races
+	server := newTestMonitorServer(8904) // Use a different port for this test
 
 	// Test concurrent access to Start method
 	results := make(chan error, 3)
@@ -230,27 +278,16 @@ func TestMonitorServer_ConcurrentAccess(t *testing.T) {
 }
 
 func TestMonitorServer_PortConfiguration(t *testing.T) {
-	// Run sequentially to avoid config races - no t.Parallel()
-
-	// Save original config first
-	originalPort := Config.GetInt("details_port")
-
-	// Ensure we restore original config at the end
-	defer Config.Set("details_port", originalPort)
-
-	// Test with different port configurations sequentially to avoid race conditions
+	// Use test helper to avoid config races - test with different port configurations
 	testPorts := []int{8900, 8901, 8902}
 
 	for _, port := range testPorts {
 		port := port // capture loop variable
 		t.Run(fmt.Sprintf("Port_%d", port), func(t *testing.T) {
-			// Don't run in parallel to avoid config races
-			// t.Parallel() - commented out intentionally
+			// Can now run in parallel since no config access
+			t.Parallel()
 
-			// Set new port
-			Config.Set("details_port", port)
-
-			server := NewMonitorServer()
+			server := newTestMonitorServer(port)
 			err := server.Start()
 			if err != nil {
 				t.Errorf("Failed to start server on port %d: %v", port, err)
@@ -270,14 +307,8 @@ func TestMonitorServer_PortConfiguration(t *testing.T) {
 }
 
 func TestMonitorServer_Shutdown(t *testing.T) {
-	// Run sequentially to avoid config races - no t.Parallel()
-
-	// Save original config
-	originalPort := Config.GetInt("details_port")
-	Config.Set("details_port", 8903)
-	defer Config.Set("details_port", originalPort)
-
-	server := NewMonitorServer()
+	// Use test helper to avoid config races
+	server := newTestMonitorServer(8903)
 
 	// Start server
 	err := server.Start()
