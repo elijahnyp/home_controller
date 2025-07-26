@@ -4,9 +4,13 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 )
+
+// Global mutex to serialize config access in tests
+var configMutex sync.Mutex
 
 func TestNewMonitorServer(t *testing.T) {
 	server := NewMonitorServer()
@@ -83,6 +87,9 @@ func TestMonitorServer_AddRawHandler(t *testing.T) {
 }
 
 func TestMonitorServer_StartAndRestart(t *testing.T) {
+	configMutex.Lock()
+	defer configMutex.Unlock()
+	
 	// Set a test port for this test
 	Config.Set("details_port", 0) // Use port 0 to get any available port
 
@@ -111,6 +118,9 @@ func TestMonitorServer_StartAndRestart(t *testing.T) {
 }
 
 func TestMonitorServer_Integration(t *testing.T) {
+	configMutex.Lock()
+	defer configMutex.Unlock()
+	
 	// Use an available port for testing
 	testPort := 8899
 	Config.Set("details_port", testPort)
@@ -163,6 +173,9 @@ func TestMonitorServer_Integration(t *testing.T) {
 }
 
 func TestMonitorServer_ConcurrentAccess(t *testing.T) {
+	configMutex.Lock()
+	defer configMutex.Unlock()
+	
 	Config.Set("details_port", 8904) // Use a different port for this test
 
 	server := NewMonitorServer()
@@ -205,6 +218,9 @@ func TestMonitorServer_ConcurrentAccess(t *testing.T) {
 }
 
 func TestMonitorServer_PortConfiguration(t *testing.T) {
+	configMutex.Lock()
+	defer configMutex.Unlock()
+	
 	// Test with different port configurations sequentially to avoid race conditions
 	testPorts := []int{8900, 8901, 8902}
 
@@ -240,6 +256,9 @@ func TestMonitorServer_PortConfiguration(t *testing.T) {
 }
 
 func TestMonitorServer_Shutdown(t *testing.T) {
+	configMutex.Lock()
+	defer configMutex.Unlock()
+	
 	// Save original config
 	originalPort := Config.GetInt("details_port")
 	Config.Set("details_port", 8903)
