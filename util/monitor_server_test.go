@@ -83,8 +83,16 @@ func TestMonitorServer_AddRawHandler(t *testing.T) {
 }
 
 func TestMonitorServer_StartAndRestart(t *testing.T) {
+	// Run sequentially to avoid config races - no t.Parallel()
+	
+	// Save original config first
+	originalPort := Config.GetInt("details_port")
+	
 	// Set a test port for this test
 	Config.Set("details_port", 0) // Use port 0 to get any available port
+	
+	// Ensure we restore original config
+	defer Config.Set("details_port", originalPort)
 
 	server := NewMonitorServer()
 
@@ -93,7 +101,7 @@ func TestMonitorServer_StartAndRestart(t *testing.T) {
 	if err != nil {
 		t.Errorf("Start() should not return error, got: %v", err)
 	}
-	
+
 	// Give server time to start
 	time.Sleep(100 * time.Millisecond)
 
@@ -111,9 +119,17 @@ func TestMonitorServer_StartAndRestart(t *testing.T) {
 }
 
 func TestMonitorServer_Integration(t *testing.T) {
+	// Run sequentially to avoid config races - no t.Parallel()
+	
+	// Save original config first
+	originalPort := Config.GetInt("details_port")
+	
 	// Use an available port for testing
 	testPort := 8899
 	Config.Set("details_port", testPort)
+	
+	// Ensure we restore original config
+	defer Config.Set("details_port", originalPort)
 
 	server := NewMonitorServer()
 
@@ -163,7 +179,15 @@ func TestMonitorServer_Integration(t *testing.T) {
 }
 
 func TestMonitorServer_ConcurrentAccess(t *testing.T) {
+	// Run sequentially to avoid config races - no t.Parallel()
+	
+	// Save original config first
+	originalPort := Config.GetInt("details_port")
+	
 	Config.Set("details_port", 8904) // Use a different port for this test
+	
+	// Ensure we restore original config
+	defer Config.Set("details_port", originalPort)
 
 	server := NewMonitorServer()
 
@@ -206,6 +230,14 @@ func TestMonitorServer_ConcurrentAccess(t *testing.T) {
 }
 
 func TestMonitorServer_PortConfiguration(t *testing.T) {
+	// Run sequentially to avoid config races - no t.Parallel()
+	
+	// Save original config first
+	originalPort := Config.GetInt("details_port")
+	
+	// Ensure we restore original config at the end
+	defer Config.Set("details_port", originalPort)
+	
 	// Test with different port configurations sequentially to avoid race conditions
 	testPorts := []int{8900, 8901, 8902}
 
@@ -214,15 +246,9 @@ func TestMonitorServer_PortConfiguration(t *testing.T) {
 		t.Run(fmt.Sprintf("Port_%d", port), func(t *testing.T) {
 			// Don't run in parallel to avoid config races
 			// t.Parallel() - commented out intentionally
-			
-			// Save original config
-			originalPort := Config.GetInt("details_port")
 
 			// Set new port
 			Config.Set("details_port", port)
-
-			// Ensure we restore original config
-			defer Config.Set("details_port", originalPort)
 
 			server := NewMonitorServer()
 			err := server.Start()
@@ -244,6 +270,8 @@ func TestMonitorServer_PortConfiguration(t *testing.T) {
 }
 
 func TestMonitorServer_Shutdown(t *testing.T) {
+	// Run sequentially to avoid config races - no t.Parallel()
+	
 	// Save original config
 	originalPort := Config.GetInt("details_port")
 	Config.Set("details_port", 8903)
