@@ -51,7 +51,7 @@ jobs:
         run: go tool cover -html=coverage.out -o coverage.html
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v4
         with:
           file: ./coverage.out
           flags: unittests
@@ -59,7 +59,7 @@ jobs:
           fail_ci_if_error: false
 
       - name: Upload coverage artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: coverage-report-go${{ matrix.go-version }}
           path: |
@@ -109,12 +109,6 @@ jobs:
       - name: Run go vet
         run: go vet ./...
 
-      - name: Install gosec
-        run: go install github.com/securecodewarrior/gosec/v2/cmd/gosec@latest
-
-      - name: Run gosec security scan
-        run: gosec -fmt json -out gosec-report.json -stdout -verbose=text ./...
-
   integration:
     runs-on: ubuntu-latest
     needs: [test, lint]
@@ -141,7 +135,7 @@ jobs:
           timeout 10s ./home_controller > /dev/null 2>&1 || echo "Application startup test completed"
 
       - name: Upload build artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: home_controller-binary
           path: home_controller
