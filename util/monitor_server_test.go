@@ -205,32 +205,45 @@ func TestMonitorServer_ConcurrentAccess(t *testing.T) {
 }
 
 func TestMonitorServer_PortConfiguration(t *testing.T) {
-	// Test with different port configurations
+	// Test with different port configurations sequentially to avoid race conditions
 	testPorts := []int{8900, 8901, 8902}
 
 	for _, port := range testPorts {
 		t.Run(fmt.Sprintf("Port_%d", port), func(t *testing.T) {
+			// Save original config
+			originalPort := Config.GetInt("details_port")
+			
+			// Set new port
 			Config.Set("details_port", port)
+			
+			// Ensure we restore original config
+			defer Config.Set("details_port", originalPort)
 
 			server := NewMonitorServer()
 			err := server.Start()
 
 			if err != nil {
 				t.Errorf("Failed to start server on port %d: %v", port, err)
+				return
 			}
 
 			// Give server time to start
-			time.Sleep(100 * time.Millisecond)
+			time.Sleep(200 * time.Millisecond)
 
 			// Clean up - restart will shut down the server
 			server.Restart()
-			time.Sleep(100 * time.Millisecond)
+			
+			// Give server time to shutdown and restart
+			time.Sleep(200 * time.Millisecond)
 		})
 	}
 }
 
 func TestMonitorServer_Shutdown(t *testing.T) {
+	// Save original config
+	originalPort := Config.GetInt("details_port")
 	Config.Set("details_port", 8903)
+	defer Config.Set("details_port", originalPort)
 
 	server := NewMonitorServer()
 
@@ -241,7 +254,7 @@ func TestMonitorServer_Shutdown(t *testing.T) {
 	}
 
 	// Give server time to start
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
 
 	// Test that the mutex is locked (server is running)
 	if server.running.TryLock() {
@@ -253,5 +266,5 @@ func TestMonitorServer_Shutdown(t *testing.T) {
 	server.Restart()
 
 	// Give time for shutdown and restart
-	time.Sleep(200 * time.Millisecond)
+	time.Sleep(300 * time.Millisecond)
 }

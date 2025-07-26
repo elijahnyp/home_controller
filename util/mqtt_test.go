@@ -1,6 +1,7 @@
 package util
 
 import (
+	"sync"
 	"testing"
 	"time"
 
@@ -12,6 +13,7 @@ type MockMQTTClient struct {
 	publishCalls   []PublishCall
 	subscribeCalls []SubscribeCall
 	connected      bool
+	mu             sync.RWMutex // Add mutex for thread safety
 }
 
 type PublishCall struct {
@@ -36,6 +38,8 @@ func (m *MockMQTTClient) Connect() MQTT.Token {
 func (m *MockMQTTClient) Disconnect(quiesce uint) { m.connected = false }
 
 func (m *MockMQTTClient) Publish(topic string, qos byte, retained bool, payload interface{}) MQTT.Token {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.publishCalls = append(m.publishCalls, PublishCall{
 		Topic:    topic,
 		QoS:      qos,
@@ -46,6 +50,8 @@ func (m *MockMQTTClient) Publish(topic string, qos byte, retained bool, payload 
 }
 
 func (m *MockMQTTClient) Subscribe(topic string, qos byte, callback MQTT.MessageHandler) MQTT.Token {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.subscribeCalls = append(m.subscribeCalls, SubscribeCall{
 		Topic:   topic,
 		QoS:     qos,

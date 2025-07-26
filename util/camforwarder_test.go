@@ -248,11 +248,18 @@ func TestCam_worker(t *testing.T) {
 	// Give worker time to process
 	time.Sleep(100 * time.Millisecond)
 
-	// Verify MQTT publish was called
-	if len(mockClient.publishCalls) != 1 {
-		t.Errorf("Expected 1 MQTT publish call from worker, got %d", len(mockClient.publishCalls))
+	// Verify MQTT publish was called (with proper synchronization)
+	mockClient.mu.RLock()
+	publishCallsLen := len(mockClient.publishCalls)
+	var call PublishCall
+	if publishCallsLen > 0 {
+		call = mockClient.publishCalls[0]
+	}
+	mockClient.mu.RUnlock()
+
+	if publishCallsLen != 1 {
+		t.Errorf("Expected 1 MQTT publish call from worker, got %d", publishCallsLen)
 	} else {
-		call := mockClient.publishCalls[0]
 		if call.Topic != "test/worker/image" {
 			t.Errorf("Worker published to topic %s, expected test/worker/image", call.Topic)
 		}
