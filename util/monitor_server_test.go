@@ -74,7 +74,9 @@ func (ts *testMonitorServer) Restart() {
 	Logger.Debug().Msg("test http not running - good for startup")
 
 	// Now start again
-	_ = ts.Start()
+	if err := ts.Start(); err != nil {
+		Logger.Error().Msgf("Failed to restart test monitor server: %v", err)
+	}
 }
 
 func (ts *testMonitorServer) AddHandler(path string, handler func(http.ResponseWriter, *http.Request)) {
