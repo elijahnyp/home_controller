@@ -1,0 +1,81 @@
+# golangci-lint configuration for home_controller project
+# Following CLAUDE.md guidelines for Go projects
+
+run:
+  timeout: 5m
+  issues-exit-code: 1
+  tests: true
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  exclude-use-default: false
+
+linters:
+  enable:
+    - errcheck      # Check for unchecked errors
+    - gosimple      # Simplify code
+    - govet         # Official Go static analyzer
+    - ineffassign   # Detect ineffectual assignments
+    - staticcheck   # Static analysis checks
+    - typecheck     # Type checking
+    - unused        # Detect unused code
+    - misspell      # Check for common spelling mistakes
+    - gofmt         # Check if code is formatted with gofmt
+    - goimports     # Check if imports are formatted with goimports
+    - gosec         # Security issues
+    - bodyclose     # Check HTTP response body is closed
+    - unconvert     # Remove unnecessary type conversions
+    - unparam       # Detect unused function parameters
+    - gocritic      # Go critic linter
+    
+linters-settings:
+  errcheck:
+    check-type-assertions: true
+    check-blank: true
+    exclude-functions:
+      # Allow some common functions to not have error checking in tests
+      - (*os.File).Close
+      - fmt.Print*
+      - (*bytes.Buffer).Write*
+      
+  gosec:
+    severity: medium
+    confidence: medium
+    
+  gocritic:
+    enabled-checks:
+      - appendAssign
+      - assignOp
+      - captLocal
+      - commentedOutCode
+      - deprecatedComment
+      - dupImport
+      - emptyFallthrough
+      - emptyStringTest
+      - equalFold
+      - indexAlloc
+      - initClause
+      - methodExprCall
+      - nilValReturn
+      - rangeExprCopy
+      - regexpMust
+      - sloppyLen
+      - stringXbytes
+      - typeAssertChain
+      - typeSwitchVar
+      - underef
+      - unlambda
+      - unslice
+
+  staticcheck:
+    checks: ["all"]
+    
+  govet:
+    check-shadowing: true
+    enable-all: true
+    
+output:
+  format: colored-line-number
+  print-issued-line: true
+  print-linter-name: true
