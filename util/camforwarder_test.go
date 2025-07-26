@@ -259,10 +259,8 @@ func TestCam_worker(t *testing.T) {
 
 	if publishCallsLen != 1 {
 		t.Errorf("Expected 1 MQTT publish call from worker, got %d", publishCallsLen)
-	} else {
-		if call.Topic != "test/worker/image" {
-			t.Errorf("Worker published to topic %s, expected test/worker/image", call.Topic)
-		}
+	} else if call.Topic != "test/worker/image" {
+		t.Errorf("Worker published to topic %s, expected test/worker/image", call.Topic)
 	}
 
 	// Close queue to stop worker

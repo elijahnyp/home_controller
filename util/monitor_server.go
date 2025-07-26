@@ -8,9 +8,9 @@ import (
 )
 
 type MonitorServer struct {
-	srv *http.Server
-	// handlers map[string]func(http.ResponseWriter, *http.Request)
 	running *sync.Mutex
+	srv     *http.Server
+	srvMu   sync.RWMutex // protects srv field
 }
 
 func NewMonitorServer() *MonitorServer {
@@ -28,8 +28,14 @@ func (s *MonitorServer) Start() error {
 	}
 	go func() {
 		s.running.Lock()
-		s.srv = &http.Server{Addr: fmt.Sprintf(":%d", Config.GetInt("details_port"))}
-		if err := s.srv.ListenAndServe(); err != http.ErrServerClosed {
+
+		// Create new server with proper synchronization
+		newSrv := &http.Server{Addr: fmt.Sprintf(":%d", Config.GetInt("details_port"))}
+		s.srvMu.Lock()
+		s.srv = newSrv
+		s.srvMu.Unlock()
+
+		if err := newSrv.ListenAndServe(); err != http.ErrServerClosed {
 			Logger.Warn().Msgf("Problem loading monitor server: %v", err)
 		}
 		Logger.Debug().Msg("monitor server shutdown")
@@ -55,8 +61,16 @@ func (s *MonitorServer) Restart() {
 	Logger.Debug().Msg("restarting monitor server")
 	if !s.running.TryLock() { // only shutdown if not running
 		Logger.Debug().Msg("monitor server running, shutting it down")
-		if err := s.srv.Shutdown(context.TODO()); err != nil {
-			Logger.Error().Msgf("Error shutting down monitor server: %v", err)
+
+		// Safely access srv with read lock
+		s.srvMu.RLock()
+		currentSrv := s.srv
+		s.srvMu.RUnlock()
+
+		if currentSrv != nil {
+			if err := currentSrv.Shutdown(context.TODO()); err != nil {
+				Logger.Error().Msgf("Error shutting down monitor server: %v", err)
+			}
 		}
 	} else {
 		s.running.Unlock()

@@ -212,10 +212,10 @@ func TestMonitorServer_PortConfiguration(t *testing.T) {
 		t.Run(fmt.Sprintf("Port_%d", port), func(t *testing.T) {
 			// Save original config
 			originalPort := Config.GetInt("details_port")
-			
+
 			// Set new port
 			Config.Set("details_port", port)
-			
+
 			// Ensure we restore original config
 			defer Config.Set("details_port", originalPort)
 
@@ -232,7 +232,7 @@ func TestMonitorServer_PortConfiguration(t *testing.T) {
 
 			// Clean up - restart will shut down the server
 			server.Restart()
-			
+
 			// Give server time to shutdown and restart
 			time.Sleep(200 * time.Millisecond)
 		})
