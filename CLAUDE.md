@@ -23,3 +23,4 @@
 * never commit to main or master.  Do everything in a branch and open a PR
 * helm charts are managed by argocd.  Don't use features of helm that argocd doesn't support
 * securecodewarrior/gosec does not exist
+* use conventional commits
