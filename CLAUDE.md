@@ -1,6 +1,7 @@
 # Golang Projects
 * use golangci-lint for security and style tests
 * use latest stable version of go
+* run go fmt before pushing
 
 # Python Projects
 

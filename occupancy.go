@@ -582,15 +582,31 @@ func main() {
 	cam_forwarder.Start()
 	Logger.Info().Msg("ready")
 	go OnlinePinger() // start the online pinger
+	go HAAdvertiser() // start the HA advertisement pinger
 	select {}         // block forever
 }
 
 // online pinger
 func OnlinePinger() {
-	for {
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	for range ticker.C {
 		if token := Client.Publish("hab/online", 0, false, "online"); token.Wait() && token.Error() != nil {
 			Logger.Error().Msgf("Error publishing online message: %v", token.Error())
 		}
-		time.Sleep(10 * time.Second)
+	}
+}
+
+// HA advertiser - advertises Home Assistant discovery messages every 5 minutes
+func HAAdvertiser() {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		if Client != nil && Client.IsConnected() {
+			Logger.Debug().Msg("Advertising Home Assistant discovery messages")
+			AdvertiseHA(model.Rooms, Client)
+		}
 	}
 }
