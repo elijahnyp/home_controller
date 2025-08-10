@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/gorilla/websocket"
 	. "github.com/elijahnyp/home_controller/util"
+	"github.com/gorilla/websocket"
 )
 
 var upgrader = websocket.Upgrader{
@@ -16,18 +16,20 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
+// WebSocketMessage represents a message sent over WebSocket
 type WebSocketMessage struct {
-	Type string      `json:"type"`
 	Data interface{} `json:"data"`
+	Type string      `json:"type"`
 }
 
+// WSClient represents a connected WebSocket client
 type WSClient struct {
-	conn   *websocket.Conn
-	send   chan WebSocketMessage
-	hub    *WSHub
-	userID string
+	conn *websocket.Conn
+	send chan WebSocketMessage
+	hub  *WSHub
 }
 
+// WSHub maintains the set of active clients and broadcasts messages
 type WSHub struct {
 	clients    map[*WSClient]bool
 	broadcast  chan WebSocketMessage
@@ -35,24 +37,27 @@ type WSHub struct {
 	unregister chan *WSClient
 }
 
+// SystemStatus represents the overall system status
 type SystemStatus struct {
-	TotalRooms     int                  `json:"total_rooms"`
-	OccupiedRooms  int                  `json:"occupied_rooms"`
-	ActiveMotion   int                  `json:"active_motion"`
-	TotalCameras   int                  `json:"total_cameras"`
-	RoomStatuses   []WebRoomStatus      `json:"room_statuses"`
-	RecentActivity []ActivityItem       `json:"recent_activity"`
-	Detections     []DetectionResult    `json:"detections"`
+	RoomStatuses   []WebRoomStatus   `json:"room_statuses"`
+	RecentActivity []ActivityItem    `json:"recent_activity"`
+	Detections     []DetectionResult `json:"detections"`
+	TotalRooms     int               `json:"total_rooms"`
+	OccupiedRooms  int               `json:"occupied_rooms"`
+	ActiveMotion   int               `json:"active_motion"`
+	TotalCameras   int               `json:"total_cameras"`
 }
 
+// WebRoomStatus represents room status for web interface
 type WebRoomStatus struct {
-	Name           string `json:"name"`
-	Occupied       bool   `json:"occupied"`
-	Motion         bool   `json:"motion"`
-	LastUpdate     int64  `json:"last_update"`
-	OccupancyPeriod int   `json:"occupancy_period"`
+	Name            string `json:"name"`
+	Occupied        bool   `json:"occupied"`
+	Motion          bool   `json:"motion"`
+	LastUpdate      int64  `json:"last_update"`
+	OccupancyPeriod int    `json:"occupancy_period"`
 }
 
+// DetectionResult represents an AI detection result
 type DetectionResult struct {
 	RoomName   string  `json:"room_name"`
 	Label      string  `json:"label"`
@@ -60,6 +65,7 @@ type DetectionResult struct {
 	Timestamp  int64   `json:"timestamp"`
 }
 
+// ActivityItem represents a system activity
 type ActivityItem struct {
 	Type      string `json:"type"`
 	Room      string `json:"room"`
@@ -67,20 +73,23 @@ type ActivityItem struct {
 	Timestamp int64  `json:"timestamp"`
 }
 
+// RoomDetail represents detailed room information
 type RoomDetail struct {
-	Name       string      `json:"name"`
-	Occupied   bool        `json:"occupied"`
-	Motion     bool        `json:"motion"`
-	Images     []RoomImage `json:"images"`
+	Images     []RoomImage       `json:"images"`
 	Detections []DetectionResult `json:"detections"`
+	Name       string            `json:"name"`
+	Occupied   bool              `json:"occupied"`
+	Motion     bool              `json:"motion"`
 }
 
+// RoomImage represents a camera image from a room
 type RoomImage struct {
 	Topic     string `json:"topic"`
-	Timestamp int64  `json:"timestamp"`
 	URL       string `json:"url"`
+	Timestamp int64  `json:"timestamp"`
 }
 
+// Detection represents an object detection in an image
 type Detection struct {
 	Label      string  `json:"label"`
 	Confidence float32 `json:"confidence"`
@@ -97,7 +106,7 @@ func init() {
 	go wsHub.Run()
 }
 
-// WebSocket Hub methods
+// NewHub creates a new WebSocket hub
 func NewHub() *WSHub {
 	return &WSHub{
 		clients:    make(map[*WSClient]bool),
@@ -107,6 +116,7 @@ func NewHub() *WSHub {
 	}
 }
 
+// Run starts the WebSocket hub
 func (h *WSHub) Run() {
 	for {
 		select {
@@ -134,6 +144,7 @@ func (h *WSHub) Run() {
 	}
 }
 
+// BroadcastUpdate sends an update to all connected clients
 func (h *WSHub) BroadcastUpdate(messageType string, data interface{}) {
 	select {
 	case h.broadcast <- WebSocketMessage{Type: messageType, Data: data}:
@@ -142,11 +153,13 @@ func (h *WSHub) BroadcastUpdate(messageType string, data interface{}) {
 	}
 }
 
-// Client methods
+// readPump pumps messages from the websocket connection to the hub
 func (c *WSClient) readPump() {
 	defer func() {
 		c.hub.unregister <- c
-		c.conn.Close()
+		if err := c.conn.Close(); err != nil {
+			Logger.Error().Err(err).Msg("Error closing WebSocket connection")
+		}
 	}()
 
 	for {
@@ -157,14 +170,21 @@ func (c *WSClient) readPump() {
 	}
 }
 
+// writePump pumps messages from the hub to the websocket connection
 func (c *WSClient) writePump() {
-	defer c.conn.Close()
+	defer func() {
+		if err := c.conn.Close(); err != nil {
+			Logger.Error().Err(err).Msg("Error closing WebSocket connection")
+		}
+	}()
 
 	for {
 		select {
 		case message, ok := <-c.send:
 			if !ok {
-				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+				if err := c.conn.WriteMessage(websocket.CloseMessage, []byte{}); err != nil {
+					Logger.Error().Err(err).Msg("Error writing close message")
+				}
 				return
 			}
 
@@ -175,7 +195,7 @@ func (c *WSClient) writePump() {
 	}
 }
 
-// HTTP Handlers
+// ServeWebSocket handles websocket requests from the peer
 func ServeWebSocket(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -195,9 +215,10 @@ func ServeWebSocket(w http.ResponseWriter, r *http.Request) {
 	go client.readPump()
 }
 
+// APISystemStatus returns the overall system status as JSON
 func APISystemStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	
+
 	status := SystemStatus{
 		TotalRooms:     len(model.Rooms),
 		OccupiedRooms:  0,
@@ -211,18 +232,18 @@ func APISystemStatus(w http.ResponseWriter, r *http.Request) {
 	// Calculate stats and room statuses
 	for _, room := range model.Rooms {
 		status.TotalCameras += len(room.Pic_topics)
-		
+
 		// Get room occupancy and motion status
 		occupied := false
 		motion := false
 		lastUpdate := time.Now().Unix()
-		
+
 		// Check occupancy status
 		if val, exists := last_occupancy_state[room.Name]; exists && val {
 			occupied = true
 			status.OccupiedRooms++
 		}
-		
+
 		// Check motion status
 		for _, topic := range room.Motion_topics {
 			if val, exists := last_motion_state[topic]; exists && val {
@@ -231,28 +252,32 @@ func APISystemStatus(w http.ResponseWriter, r *http.Request) {
 				break
 			}
 		}
-		
+
 		status.RoomStatuses = append(status.RoomStatuses, WebRoomStatus{
-			Name:           room.Name,
-			Occupied:       occupied,
-			Motion:         motion,
-			LastUpdate:     lastUpdate,
+			Name:            room.Name,
+			Occupied:        occupied,
+			Motion:          motion,
+			LastUpdate:      lastUpdate,
 			OccupancyPeriod: int(room.Occupancy_period),
 		})
 	}
 
-	json.NewEncoder(w).Encode(status)
+	if err := json.NewEncoder(w).Encode(status); err != nil {
+		Logger.Error().Err(err).Msg("Error encoding system status")
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+	}
 }
 
+// APIRoomDetail returns detailed information about a specific room
 func APIRoomDetail(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	
+
 	roomName := r.URL.Query().Get("room")
 	if roomName == "" {
 		http.Error(w, "Room name required", http.StatusBadRequest)
 		return
 	}
-	
+
 	detail := RoomDetail{
 		Name:       roomName,
 		Occupied:   false,
@@ -260,7 +285,7 @@ func APIRoomDetail(w http.ResponseWriter, r *http.Request) {
 		Images:     []RoomImage{},
 		Detections: []DetectionResult{},
 	}
-	
+
 	// Find the room to get its pic topics
 	for _, room := range model.Rooms {
 		if room.Name == roomName {
@@ -268,7 +293,7 @@ func APIRoomDetail(w http.ResponseWriter, r *http.Request) {
 			if val, exists := last_occupancy_state[room.Name]; exists {
 				detail.Occupied = val
 			}
-			
+
 			// Check motion status
 			for _, topic := range room.Motion_topics {
 				if val, exists := last_motion_state[topic]; exists && val {
@@ -276,7 +301,7 @@ func APIRoomDetail(w http.ResponseWriter, r *http.Request) {
 					break
 				}
 			}
-			
+
 			// Get images and detection results for each camera topic
 			for _, topic := range room.Pic_topics {
 				// Add image URL
@@ -285,7 +310,7 @@ func APIRoomDetail(w http.ResponseWriter, r *http.Request) {
 					Timestamp: time.Now().Unix(),
 					URL:       fmt.Sprintf("/image?id=%s", topic),
 				})
-				
+
 				// Get detection results from cache
 				if cacheItem, exists := cache[topic]; exists {
 					for _, pred := range cacheItem.results.Predictions {
@@ -301,15 +326,19 @@ func APIRoomDetail(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
-	
-	json.NewEncoder(w).Encode(detail)
+
+	if err := json.NewEncoder(w).Encode(detail); err != nil {
+		Logger.Error().Err(err).Msg("Error encoding room detail")
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+	}
 }
 
+// RoomDetailHandler serves the room detail page
 func RoomDetailHandler(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, "web/static/room.html")
 }
 
+// HomeHandler serves the main dashboard page
 func HomeHandler(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, "web/static/index.html")
 }
-

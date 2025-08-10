@@ -223,20 +223,20 @@ func OccupancyManagerRoutine() {
 		} else {
 			message = "true"
 		}
-		
+
 		// Update global state for web interface
 		last_occupancy_state[item.Room] = (message == "true")
-		
+
 		// Broadcast update via WebSocket if available
 		if wsHub != nil {
 			wsHub.BroadcastUpdate("room_status", map[string]interface{}{
-				"room":          item.Room,
-				"occupied":      message == "true",
-				"motion":        room.GetMotionState(),
+				"room":            item.Room,
+				"occupied":        message == "true",
+				"motion":          room.GetMotionState(),
 				"person_detected": cam_opinion,
 			})
 		}
-		
+
 		model.UpdateRoomStatus(item.Room, room)
 		token := Client.Publish(occupancy_topic, byte(0), false, message)
 		token.Wait() // this is VERY BAD
@@ -298,7 +298,7 @@ func MotionManagerRoutine() {
 				continue
 			} else if string(item.Data) == "ON" || string(item.Data) == "CLOSED" {
 				item.Analysis_result = MOTION_START
-				// Update motion state tracking  
+				// Update motion state tracking
 				for _, room := range model.Rooms {
 					if room.Name == item.Room {
 						for _, topic := range room.Motion_topics {
@@ -628,13 +628,13 @@ func main() {
 	OnNewConfig()
 	Init()
 	monitor := NewMonitorServer()
-	
+
 	// Legacy endpoints (keep intact as per requirements)
 	monitor.AddHandler("/image", HttpImage)
 	monitor.AddHandler("/room", RoomOverview)
 	monitor.AddHandler("/room_status", StatusOverview)
 	monitor.AddHandler("/model", ModelApi)
-	
+
 	// New web interface endpoints
 	monitor.AddHandler("/", HomeHandler)
 	monitor.AddHandler("/ws", ServeWebSocket)
@@ -648,9 +648,9 @@ func main() {
 	cam_forwarder.MakeCamForwarder()
 	cam_forwarder.Start()
 	Logger.Info().Msg("ready")
-	go OnlinePinger()   // start the online pinger
-	go HAAdvertiser()   // start the HA advertisement pinger
-	select {}           // block forever
+	go OnlinePinger() // start the online pinger
+	go HAAdvertiser() // start the HA advertisement pinger
+	select {}         // block forever
 }
 
 // online pinger
@@ -667,7 +667,7 @@ func OnlinePinger() {
 func HAAdvertiser() {
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
-	
+
 	for range ticker.C {
 		if Client != nil && Client.IsConnected() {
 			Logger.Debug().Msg("Advertising Home Assistant discovery messages")
