@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Home Controller - Room Occupancy Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            line-height: 1.6;
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        /* Dark mode (default) */
+        :root {
+            --bg-color: #1a1a1a;
+            --surface-color: #2d2d2d;
+            --surface-hover: #3a3a3a;
+            --text-color: #ffffff;
+            --text-secondary: #b0b0b0;
+            --border-color: #404040;
+            --accent-color: #667eea;
+            --success-color: #28a745;
+            --warning-color: #ffc107;
+            --danger-color: #dc3545;
+            --info-color: #17a2b8;
+        }
+
+        /* Light mode */
+        [data-theme="light"] {
+            --bg-color: #f5f5f5;
+            --surface-color: #ffffff;
+            --surface-hover: #f8f9fa;
+            --text-color: #333333;
+            --text-secondary: #666666;
+            --border-color: #dee2e6;
+            --accent-color: #667eea;
+            --success-color: #28a745;
+            --warning-color: #ffc107;
+            --danger-color: #dc3545;
+            --info-color: #17a2b8;
+        }
+
+        .header {
+            background: linear-gradient(135deg, var(--accent-color) 0%, #764ba2 100%);
+            color: white;
+            padding: 1rem 0;
+            text-align: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            position: relative;
+        }
+
+        .header h1 {
+            margin-bottom: 0.5rem;
+        }
+
+        .theme-toggle {
+            position: absolute;
+            top: 1rem;
+            right: 2rem;
+            background: rgba(255,255,255,0.2);
+            border: none;
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        .theme-toggle:hover {
+            background: rgba(255,255,255,0.3);
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+
+        .status-overview {
+            background: var(--surface-color);
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            border: 1px solid var(--border-color);
+        }
+
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .status-card {
+            background: var(--surface-hover);
+            border-radius: 6px;
+            padding: 1rem;
+            text-align: center;
+            border: 1px solid var(--border-color);
+        }
+
+        .status-value {
+            font-size: 1.5rem;
+            font-weight: bold;
+            margin-bottom: 0.25rem;
+            color: var(--text-color);
+        }
+
+        .status-label {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .stat-card {
+            background: #f8f9fa;
+            padding: 1rem;
+            border-radius: 6px;
+            text-align: center;
+            border-left: 4px solid #667eea;
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .stat-label {
+            color: #666;
+            font-size: 0.9rem;
+        }
+
+        .rooms-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .room-card {
+            background: var(--surface-color);
+            border-radius: 8px;
+            padding: 1.5rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            transition: transform 0.2s, box-shadow 0.2s;
+            cursor: pointer;
+            border: 1px solid var(--border-color);
+            text-decoration: none;
+            color: inherit;
+        }
+
+        .room-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            background: var(--surface-hover);
+        }
+
+        .room-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .room-name {
+            font-size: 1.3rem;
+            font-weight: bold;
+            text-transform: capitalize;
+            color: var(--text-color);
+        }
+
+        .room-status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+
+        .status-occupied {
+            background-color: var(--success-color);
+        }
+
+        .status-unoccupied {
+            background-color: var(--danger-color);
+        }
+
+        .room-details {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+        }
+
+        .detail-item {
+            background: var(--surface-hover);
+            padding: 0.75rem;
+            border-radius: 4px;
+            border: 1px solid var(--border-color);
+        }
+
+        .detail-label {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.25rem;
+        }
+
+        .detail-value {
+            font-weight: bold;
+            color: var(--text-color);
+        }
+
+        .countdown-timer {
+            color: var(--warning-color);
+            font-weight: bold;
+        }
+
+        .motion-active {
+            color: var(--warning-color);
+        }
+
+        .motion-inactive {
+            color: var(--text-secondary);
+        }
+
+        .detail-item {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .detail-label {
+            font-size: 0.8rem;
+            color: #666;
+            margin-bottom: 0.25rem;
+        }
+
+        .detail-value {
+            font-weight: bold;
+        }
+
+        .timer-display {
+            font-family: 'Courier New', monospace;
+            font-size: 1.1rem;
+            color: #667eea;
+        }
+
+        .motion-active {
+            color: #28a745;
+        }
+
+        .motion-inactive {
+            color: #dc3545;
+        }
+
+        .connection-status {
+            position: fixed;
+            top: 1rem;
+            left: 1rem;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            z-index: 1000;
+        }
+
+        .connected {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .disconnected {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        @media (max-width: 768px) {
+            .room-details {
+                grid-template-columns: 1fr;
+            }
+            
+            .status-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="connection-status" id="connectionStatus">
+        Connecting...
+    </div>
+
+    <header class="header">
+        <button class="theme-toggle" id="themeToggle">🌙 Dark</button>
+        <h1>Home Controller</h1>
+        <p>Room Occupancy Dashboard</p>
+    </header>
+
+    <div class="container">
+        <div class="status-overview">
+            <h2>System Overview</h2>
+            <div class="status-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="totalRooms">0</div>
+                    <div class="stat-label">Total Rooms</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="occupiedRooms">0</div>
+                    <div class="stat-label">Occupied Rooms</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="activeMotion">0</div>
+                    <div class="stat-label">Active Motion</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="totalCameras">0</div>
+                    <div class="stat-label">Total Cameras</div>
+                </div>
+            </div>
+        </div>
+
+        <div id="roomsContainer" class="rooms-grid">
+            <!-- Room cards will be dynamically generated here -->
+        </div>
+    </div>
+
+    <script>
+        class HomeController {
+            constructor() {
+                this.ws = null;
+                this.reconnectInterval = 5000;
+                this.rooms = new Map();
+                this.countdownTimers = new Map();
+                this.init();
+            }
+
+            init() {
+                this.initTheme();
+                this.setupEventListeners();
+                this.connectWebSocket();
+                this.loadInitialData();
+                this.startCountdownUpdates();
+            }
+
+            initTheme() {
+                // Default to dark mode
+                const savedTheme = localStorage.getItem('theme') || 'dark';
+                this.setTheme(savedTheme);
+            }
+
+            setupEventListeners() {
+                const themeToggle = document.getElementById('themeToggle');
+                themeToggle.addEventListener('click', () => {
+                    const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+                    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+                    this.setTheme(newTheme);
+                });
+            }
+
+            setTheme(theme) {
+                const themeToggle = document.getElementById('themeToggle');
+                if (theme === 'light') {
+                    document.documentElement.setAttribute('data-theme', 'light');
+                    themeToggle.textContent = '☀️ Light';
+                } else {
+                    document.documentElement.removeAttribute('data-theme');
+                    themeToggle.textContent = '🌙 Dark';
+                }
+                localStorage.setItem('theme', theme);
+            }
+
+            startCountdownUpdates() {
+                // Update countdowns every second
+                setInterval(() => {
+                    this.updateCountdowns();
+                }, 1000);
+            }
+
+            connectWebSocket() {
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const wsUrl = `${protocol}//${window.location.host}/ws`;
+
+                try {
+                    this.ws = new WebSocket(wsUrl);
+                    
+                    this.ws.onopen = () => {
+                        console.log('WebSocket connected');
+                        this.updateConnectionStatus(true);
+                    };
+
+                    this.ws.onmessage = (event) => {
+                        try {
+                            const message = JSON.parse(event.data);
+                            this.handleWebSocketMessage(message);
+                        } catch (error) {
+                            console.error('Error parsing WebSocket message:', error);
+                        }
+                    };
+
+                    this.ws.onclose = () => {
+                        console.log('WebSocket disconnected');
+                        this.updateConnectionStatus(false);
+                        setTimeout(() => this.connectWebSocket(), this.reconnectInterval);
+                    };
+
+                    this.ws.onerror = (error) => {
+                        console.error('WebSocket error:', error);
+                        this.updateConnectionStatus(false);
+                    };
+                } catch (error) {
+                    console.error('Failed to create WebSocket connection:', error);
+                    this.updateConnectionStatus(false);
+                    setTimeout(() => this.connectWebSocket(), this.reconnectInterval);
+                }
+            }
+
+            handleWebSocketMessage(message) {
+                switch (message.type) {
+                    case 'room_status':
+                        this.updateRoomStatus(message.data);
+                        break;
+                    case 'system_update':
+                        this.updateSystemStats(message.data);
+                        break;
+                    default:
+                        console.log('Unknown message type:', message.type);
+                }
+            }
+
+            async loadInitialData() {
+                try {
+                    const response = await fetch('/api/status');
+                    const data = await response.json();
+                    this.updateSystemStats(data);
+                    this.renderRooms(data.room_statuses);
+                } catch (error) {
+                    console.error('Error loading initial data:', error);
+                }
+            }
+
+            updateSystemStats(data) {
+                document.getElementById('totalRooms').textContent = data.total_rooms || 0;
+                document.getElementById('occupiedRooms').textContent = data.occupied_rooms || 0;
+                document.getElementById('activeMotion').textContent = data.active_motion || 0;
+                document.getElementById('totalCameras').textContent = data.total_cameras || 0;
+            }
+
+            renderRooms(roomStatuses) {
+                const container = document.getElementById('roomsContainer');
+                container.innerHTML = '';
+
+                roomStatuses.forEach(room => {
+                    this.rooms.set(room.name, room);
+                    const roomCard = this.createRoomCard(room);
+                    container.appendChild(roomCard);
+                });
+            }
+
+            createRoomCard(room) {
+                const card = document.createElement('div');
+                card.className = 'room-card';
+                card.onclick = () => this.showRoomDetails(room.name);
+
+                const timeDiff = Math.floor(Date.now() / 1000) - room.last_update;
+                const timeAgo = this.formatTimeAgo(timeDiff);
+                
+                // Calculate countdown if room is unoccupied
+                const countdownDisplay = this.getCountdownDisplay(room);
+
+                card.innerHTML = `
+                    <div class="room-header">
+                        <div class="room-name">${room.name.replace(/_/g, ' ')}</div>
+                        <div class="room-status">
+                            <div class="status-indicator ${room.occupied ? 'status-occupied' : 'status-unoccupied'}"></div>
+                            <span>${room.occupied ? 'Occupied' : 'Unoccupied'}</span>
+                        </div>
+                    </div>
+                    <div class="room-details">
+                        <div class="detail-item">
+                            <div class="detail-label">Motion Status</div>
+                            <div class="detail-value ${room.motion ? 'motion-active' : 'motion-inactive'}">
+                                ${room.motion ? 'Active' : 'Inactive'}
+                            </div>
+                        </div>
+                        <div class="detail-item">
+                            <div class="detail-label">Last Update</div>
+                            <div class="detail-value timer-display">${timeAgo}</div>
+                        </div>
+                        ${countdownDisplay ? `
+                        <div class="detail-item">
+                            <div class="detail-label">Countdown Timer</div>
+                            <div class="detail-value countdown-timer" id="countdown-${room.name}">${countdownDisplay}</div>
+                        </div>
+                        ` : ''}
+                    </div>
+                `;
+
+                return card;
+            }
+
+            getCountdownDisplay(room) {
+                // Show countdown only when room is occupied but no motion AND no person detected
+                // This means the countdown timer is running to determine when room becomes unoccupied
+                // Timer resets if either motion is detected OR person is detected in images
+                if (room.occupied && !room.motion && !room.person_detected) {
+                    // Use the actual occupancy period from the room configuration
+                    const occupancyPeriod = room.occupancy_period || 120; // fallback to 2 minutes if not provided
+                    const timeSinceLastUpdate = Math.floor(Date.now() / 1000) - room.last_update;
+                    const estimatedRemaining = Math.max(0, occupancyPeriod - timeSinceLastUpdate);
+                    
+                    if (estimatedRemaining > 0) {
+                        const minutes = Math.floor(estimatedRemaining / 60);
+                        const seconds = estimatedRemaining % 60;
+                        return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+                    }
+                }
+                return null;
+            }
+
+            updateCountdowns() {
+                this.rooms.forEach((room, roomName) => {
+                    const countdownElement = document.getElementById(`countdown-${roomName}`);
+                    if (countdownElement) {
+                        const countdownDisplay = this.getCountdownDisplay(room);
+                        if (countdownDisplay) {
+                            countdownElement.textContent = countdownDisplay;
+                        }
+                    }
+                });
+            }
+
+            updateRoomStatus(roomData) {
+                const room = this.rooms.get(roomData.room);
+                if (room) {
+                    const oldOccupied = room.occupied;
+                    const oldMotion = room.motion;
+                    const oldPersonDetected = room.person_detected;
+                    
+                    room.occupied = roomData.occupied;
+                    room.motion = roomData.motion;
+                    room.person_detected = roomData.person_detected;
+                    
+                    // Only update last_update if the status actually changed
+                    // This preserves the countdown timer calculation
+                    // Reset timer when: occupancy changes, motion changes, OR person detection changes
+                    if (oldOccupied !== roomData.occupied || 
+                        oldMotion !== roomData.motion || 
+                        oldPersonDetected !== roomData.person_detected) {
+                        room.last_update = Math.floor(Date.now() / 1000);
+                    }
+                    
+                    // Re-render just this room card instead of reloading all data
+                    this.updateSingleRoomCard(roomData.room);
+                }
+            }
+
+            updateSingleRoomCard(roomName) {
+                const room = this.rooms.get(roomName);
+                if (!room) return;
+                
+                const container = document.getElementById('roomsContainer');
+                const existingCards = container.children;
+                
+                // Find and replace the existing card for this room
+                for (let i = 0; i < existingCards.length; i++) {
+                    const card = existingCards[i];
+                    const cardRoomName = card.querySelector('.room-name').textContent.replace(/ /g, '_').toLowerCase();
+                    if (cardRoomName === roomName.toLowerCase()) {
+                        const newCard = this.createRoomCard(room);
+                        container.replaceChild(newCard, card);
+                        break;
+                    }
+                }
+            }
+
+            showRoomDetails(roomName) {
+                window.location.href = `/room_detail?room=${encodeURIComponent(roomName)}`;
+            }
+
+            formatTimeAgo(seconds) {
+                if (seconds < 60) return `${seconds}s ago`;
+                if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+                if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+                return `${Math.floor(seconds / 86400)}d ago`;
+            }
+
+            updateConnectionStatus(connected) {
+                const status = document.getElementById('connectionStatus');
+                if (connected) {
+                    status.textContent = 'Connected';
+                    status.className = 'connection-status connected';
+                } else {
+                    status.textContent = 'Disconnected';
+                    status.className = 'connection-status disconnected';
+                }
+            }
+        }
+
+        // Initialize the application when the DOM is loaded
+        document.addEventListener('DOMContentLoaded', () => {
+            new HomeController();
+        });
+    </script>
+</body>
+</html>
