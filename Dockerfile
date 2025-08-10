@@ -10,4 +10,6 @@ RUN chmod +x /src/home_controller
 FROM alpine:3.21
 
 COPY --from=BUILDER /src/home_controller /home_controller/
-CMD /home_controller/home_controller
+COPY --from=BUILDER /src/web /home_controller/web
+WORKDIR /home_controller
+CMD ./home_controller
