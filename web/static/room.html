@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Room Details - Home Controller</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            line-height: 1.6;
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        /* Dark mode (default) */
+        :root {
+            --bg-color: #1a1a1a;
+            --surface-color: #2d2d2d;
+            --surface-hover: #3a3a3a;
+            --text-color: #ffffff;
+            --text-secondary: #b0b0b0;
+            --border-color: #404040;
+            --accent-color: #667eea;
+            --success-color: #28a745;
+            --warning-color: #ffc107;
+            --danger-color: #dc3545;
+            --info-color: #17a2b8;
+        }
+
+        /* Light mode */
+        [data-theme="light"] {
+            --bg-color: #f5f5f5;
+            --surface-color: #ffffff;
+            --surface-hover: #f8f9fa;
+            --text-color: #333333;
+            --text-secondary: #666666;
+            --border-color: #dee2e6;
+            --accent-color: #667eea;
+            --success-color: #28a745;
+            --warning-color: #ffc107;
+            --danger-color: #dc3545;
+            --info-color: #17a2b8;
+        }
+
+        .header {
+            background: linear-gradient(135deg, var(--accent-color) 0%, #764ba2 100%);
+            color: white;
+            padding: 1rem 0;
+            text-align: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            position: relative;
+        }
+
+        .header h1 {
+            margin-bottom: 0.5rem;
+        }
+
+        .nav-link {
+            color: white;
+            text-decoration: none;
+            opacity: 0.8;
+            transition: opacity 0.2s;
+        }
+
+        .nav-link:hover {
+            opacity: 1;
+        }
+
+        .theme-toggle {
+            position: absolute;
+            top: 1rem;
+            right: 2rem;
+            background: rgba(255,255,255,0.2);
+            border: none;
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        .theme-toggle:hover {
+            background: rgba(255,255,255,0.3);
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+
+        .room-info {
+            background: var(--surface-color);
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            border: 1px solid var(--border-color);
+        }
+
+        .room-status-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .status-card {
+            background: var(--surface-hover);
+            padding: 1rem;
+            border-radius: 6px;
+            text-align: center;
+            border: 1px solid var(--border-color);
+        }
+
+        .status-value {
+            font-size: 1.5rem;
+            font-weight: bold;
+            margin-bottom: 0.25rem;
+            color: var(--text-color);
+        }
+
+        .status-label {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .occupied {
+            border-left: 4px solid var(--success-color);
+        }
+
+        .occupied .status-value {
+            color: var(--success-color);
+        }
+
+        .unoccupied {
+            border-left: 4px solid var(--danger-color);
+        }
+
+        .unoccupied .status-value {
+            color: var(--danger-color);
+        }
+
+        .motion-active {
+            border-left: 4px solid var(--warning-color);
+        }
+
+        .motion-active .status-value {
+            color: var(--warning-color);
+        }
+
+        .motion-inactive {
+            border-left: 4px solid var(--text-secondary);
+        }
+
+        .motion-inactive .status-value {
+            color: var(--text-secondary);
+        }
+
+        .images-section {
+            background: var(--surface-color);
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            border: 1px solid var(--border-color);
+        }
+
+        .images-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .image-card {
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            overflow: hidden;
+            background: var(--surface-color);
+        }
+
+        .image-card img {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+
+        .image-info {
+            padding: 1rem;
+        }
+
+        .image-topic {
+            font-weight: bold;
+            margin-bottom: 0.5rem;
+            color: var(--accent-color);
+        }
+
+        .image-timestamp {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .detections-section {
+            background: var(--surface-color);
+            border-radius: 8px;
+            padding: 1.5rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            border: 1px solid var(--border-color);
+        }
+
+        .detections-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+
+        .detections-table th,
+        .detections-table td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .detections-table th {
+            background-color: var(--surface-hover);
+            font-weight: bold;
+            color: var(--text-color);
+        }
+
+        .confidence-high {
+            color: var(--success-color);
+            font-weight: bold;
+        }
+
+        .confidence-medium {
+            color: var(--warning-color);
+            font-weight: bold;
+        }
+
+        .confidence-low {
+            color: var(--danger-color);
+            font-weight: bold;
+        }
+
+        .no-data {
+            text-align: center;
+            color: var(--text-secondary);
+            font-style: italic;
+            padding: 2rem;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 2rem;
+            color: var(--accent-color);
+        }
+
+        .error {
+            background-color: rgba(220, 53, 69, 0.1);
+            color: var(--danger-color);
+            padding: 1rem;
+            border-radius: 4px;
+            margin: 1rem 0;
+            border: 1px solid var(--danger-color);
+        }
+
+        @media (max-width: 768px) {
+            .room-status-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            
+            .images-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <button class="theme-toggle" id="themeToggle">🌙 Dark</button>
+        <h1>Room Details</h1>
+        <p><a href="/" class="nav-link">← Back to Dashboard</a></p>
+    </header>
+
+    <div class="container">
+        <div class="room-info">
+            <h2 id="roomName">Loading...</h2>
+            <div class="room-status-grid">
+                <div id="occupancyCard" class="status-card">
+                    <div class="status-value" id="occupancyStatus">-</div>
+                    <div class="status-label">Occupancy</div>
+                </div>
+                <div id="motionCard" class="status-card">
+                    <div class="status-value" id="motionStatus">-</div>
+                    <div class="status-label">Motion</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="images-section">
+            <h3>Camera Images</h3>
+            <div id="imagesContainer" class="images-grid">
+                <div class="loading">Loading images...</div>
+            </div>
+        </div>
+
+        <div class="detections-section">
+            <h3>Recent Detections</h3>
+            <div id="detectionsContainer">
+                <div class="loading">Loading detections...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class RoomDetail {
+            constructor() {
+                this.roomName = this.getRoomNameFromUrl();
+                this.init();
+            }
+
+            getRoomNameFromUrl() {
+                const urlParams = new URLSearchParams(window.location.search);
+                return urlParams.get('room');
+            }
+
+            async init() {
+                this.initTheme();
+                this.setupEventListeners();
+                
+                if (!this.roomName) {
+                    this.showError('No room specified');
+                    return;
+                }
+
+                document.getElementById('roomName').textContent = this.roomName.replace(/_/g, ' ');
+                document.title = `${this.roomName} - Room Details`;
+
+                await this.loadRoomDetail();
+                this.startPeriodicUpdates();
+            }
+
+            initTheme() {
+                // Sync with main dashboard theme
+                const savedTheme = localStorage.getItem('theme') || 'dark';
+                this.setTheme(savedTheme);
+            }
+
+            setupEventListeners() {
+                const themeToggle = document.getElementById('themeToggle');
+                themeToggle.addEventListener('click', () => {
+                    const currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
+                    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+                    this.setTheme(newTheme);
+                });
+            }
+
+            setTheme(theme) {
+                const themeToggle = document.getElementById('themeToggle');
+                if (theme === 'light') {
+                    document.documentElement.setAttribute('data-theme', 'light');
+                    themeToggle.textContent = '☀️ Light';
+                } else {
+                    document.documentElement.removeAttribute('data-theme');
+                    themeToggle.textContent = '🌙 Dark';
+                }
+                localStorage.setItem('theme', theme);
+            }
+
+            async loadRoomDetail() {
+                try {
+                    const response = await fetch(`/api/room?room=${encodeURIComponent(this.roomName)}`);
+                    
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+
+                    const data = await response.json();
+                    this.updateRoomStatus(data);
+                    this.renderImages(data.images);
+                    this.renderDetections(data.detections);
+                } catch (error) {
+                    console.error('Error loading room detail:', error);
+                    this.showError('Failed to load room details');
+                }
+            }
+
+            updateRoomStatus(data) {
+                // Update occupancy status
+                const occupancyCard = document.getElementById('occupancyCard');
+                const occupancyStatus = document.getElementById('occupancyStatus');
+                
+                occupancyStatus.textContent = data.occupied ? 'Occupied' : 'Unoccupied';
+                occupancyCard.className = `status-card ${data.occupied ? 'occupied' : 'unoccupied'}`;
+
+                // Update motion status
+                const motionCard = document.getElementById('motionCard');
+                const motionStatus = document.getElementById('motionStatus');
+                
+                motionStatus.textContent = data.motion ? 'Active' : 'Inactive';
+                motionCard.className = `status-card ${data.motion ? 'motion-active' : 'motion-inactive'}`;
+            }
+
+            renderImages(images) {
+                const container = document.getElementById('imagesContainer');
+                
+                if (!images || images.length === 0) {
+                    container.innerHTML = '<div class="no-data">No camera images available</div>';
+                    return;
+                }
+
+                container.innerHTML = '';
+                images.forEach(image => {
+                    const imageCard = document.createElement('div');
+                    imageCard.className = 'image-card';
+                    
+                    const timestamp = new Date(image.timestamp * 1000).toLocaleString();
+                    
+                    imageCard.innerHTML = `
+                        <img src="${image.url}" alt="Camera image from ${image.topic}" 
+                             onerror="this.src='data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZGRkIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIxNCIgZmlsbD0iIzk5OSIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPkltYWdlIG5vdCBhdmFpbGFibGU8L3RleHQ+PC9zdmc+'" />
+                        <div class="image-info">
+                            <div class="image-topic">${image.topic}</div>
+                            <div class="image-timestamp">${timestamp}</div>
+                        </div>
+                    `;
+                    
+                    container.appendChild(imageCard);
+                });
+            }
+
+            renderDetections(detections) {
+                const container = document.getElementById('detectionsContainer');
+                
+                if (!detections || detections.length === 0) {
+                    container.innerHTML = '<div class="no-data">No recent detections</div>';
+                    return;
+                }
+
+                let tableHTML = `
+                    <table class="detections-table">
+                        <thead>
+                            <tr>
+                                <th>Object</th>
+                                <th>Confidence</th>
+                                <th>Timestamp</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+
+                detections.forEach(detection => {
+                    const confidence = (detection.confidence * 100).toFixed(1);
+                    const confidenceClass = this.getConfidenceClass(detection.confidence);
+                    const timestamp = new Date(detection.timestamp * 1000).toLocaleString();
+                    
+                    tableHTML += `
+                        <tr>
+                            <td>${detection.label}</td>
+                            <td class="${confidenceClass}">${confidence}%</td>
+                            <td>${timestamp}</td>
+                        </tr>
+                    `;
+                });
+
+                tableHTML += `
+                        </tbody>
+                    </table>
+                `;
+
+                container.innerHTML = tableHTML;
+            }
+
+            getConfidenceClass(confidence) {
+                if (confidence >= 0.8) return 'confidence-high';
+                if (confidence >= 0.6) return 'confidence-medium';
+                return 'confidence-low';
+            }
+
+            showError(message) {
+                const container = document.querySelector('.container');
+                container.innerHTML = `<div class="error">${message}</div>`;
+            }
+
+            startPeriodicUpdates() {
+                // Update room details every 30 seconds
+                setInterval(() => {
+                    this.loadRoomDetail();
+                }, 30000);
+            }
+        }
+
+        // Initialize the application when the DOM is loaded
+        document.addEventListener('DOMContentLoaded', () => {
+            new RoomDetail();
+        });
+    </script>
+</body>
+</html>

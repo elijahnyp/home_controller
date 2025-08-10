@@ -52,6 +52,10 @@ type MQTT_Item struct { //nolint:govet // struct layout optimized for clarity ov
 var last_processed = make(map[string]int64)
 var cache = make(map[string]ImageCacheItem)
 
+// Global state tracking for web interface
+var last_occupancy_state = make(map[string]bool)
+var last_motion_state = make(map[string]bool)
+
 var model Model
 
 var cam_forwarder CamForwarder
@@ -219,6 +223,20 @@ func OccupancyManagerRoutine() {
 		} else {
 			message = "true"
 		}
+		
+		// Update global state for web interface
+		last_occupancy_state[item.Room] = (message == "true")
+		
+		// Broadcast update via WebSocket if available
+		if wsHub != nil {
+			wsHub.BroadcastUpdate("room_status", map[string]interface{}{
+				"room":          item.Room,
+				"occupied":      message == "true",
+				"motion":        room.GetMotionState(),
+				"person_detected": cam_opinion,
+			})
+		}
+		
 		model.UpdateRoomStatus(item.Room, room)
 		token := Client.Publish(occupancy_topic, byte(0), false, message)
 		token.Wait() // this is VERY BAD
@@ -235,10 +253,30 @@ func MotionManagerRoutine() {
 			switch numd {
 			case 0:
 				item.Analysis_result = MOTION_STOP
+				// Update motion state tracking
+				for _, room := range model.Rooms {
+					if room.Name == item.Room {
+						for _, topic := range room.Motion_topics {
+							if topic == item.Topic {
+								last_motion_state[topic] = false
+							}
+						}
+					}
+				}
 				results_channel <- item
 				continue
 			default:
 				item.Analysis_result = MOTION_START
+				// Update motion state tracking
+				for _, room := range model.Rooms {
+					if room.Name == item.Room {
+						for _, topic := range room.Motion_topics {
+							if topic == item.Topic {
+								last_motion_state[topic] = true
+							}
+						}
+					}
+				}
 				results_channel <- item
 				continue
 			}
@@ -246,10 +284,30 @@ func MotionManagerRoutine() {
 			Logger.Debug().Msgf("%s motion string received: %s", item.Room, string(item.Data))
 			if string(item.Data) == "OFF" || string(item.Data) == "OPEN" {
 				item.Analysis_result = MOTION_STOP
+				// Update motion state tracking
+				for _, room := range model.Rooms {
+					if room.Name == item.Room {
+						for _, topic := range room.Motion_topics {
+							if topic == item.Topic {
+								last_motion_state[topic] = false
+							}
+						}
+					}
+				}
 				results_channel <- item
 				continue
 			} else if string(item.Data) == "ON" || string(item.Data) == "CLOSED" {
 				item.Analysis_result = MOTION_START
+				// Update motion state tracking  
+				for _, room := range model.Rooms {
+					if room.Name == item.Room {
+						for _, topic := range room.Motion_topics {
+							if topic == item.Topic {
+								last_motion_state[topic] = true
+							}
+						}
+					}
+				}
 				results_channel <- item
 				continue
 			}
@@ -570,10 +628,19 @@ func main() {
 	OnNewConfig()
 	Init()
 	monitor := NewMonitorServer()
+	
+	// Legacy endpoints (keep intact as per requirements)
 	monitor.AddHandler("/image", HttpImage)
 	monitor.AddHandler("/room", RoomOverview)
 	monitor.AddHandler("/room_status", StatusOverview)
 	monitor.AddHandler("/model", ModelApi)
+	
+	// New web interface endpoints
+	monitor.AddHandler("/", HomeHandler)
+	monitor.AddHandler("/ws", ServeWebSocket)
+	monitor.AddHandler("/api/status", APISystemStatus)
+	monitor.AddHandler("/api/room", APIRoomDetail)
+	monitor.AddHandler("/room_detail", RoomDetailHandler)
 	if err := monitor.Start(); err != nil {
 		Logger.Error().Msgf("Error starting monitor server: %v", err)
 	}
@@ -581,28 +648,26 @@ func main() {
 	cam_forwarder.MakeCamForwarder()
 	cam_forwarder.Start()
 	Logger.Info().Msg("ready")
-	go OnlinePinger() // start the online pinger
-	go HAAdvertiser() // start the HA advertisement pinger
-	select {}         // block forever
+	go OnlinePinger()   // start the online pinger
+	go HAAdvertiser()   // start the HA advertisement pinger
+	select {}           // block forever
 }
 
 // online pinger
 func OnlinePinger() {
-	ticker := time.NewTicker(10 * time.Second)
-	defer ticker.Stop()
-
-	for range ticker.C {
+	for {
 		if token := Client.Publish("hab/online", 0, false, "online"); token.Wait() && token.Error() != nil {
 			Logger.Error().Msgf("Error publishing online message: %v", token.Error())
 		}
+		time.Sleep(10 * time.Second)
 	}
 }
 
-// HA advertiser - advertises Home Assistant discovery messages every 5 minutes
+// HAAdvertiser - advertises Home Assistant discovery messages every 5 minutes
 func HAAdvertiser() {
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
-
+	
 	for range ticker.C {
 		if Client != nil && Client.IsConnected() {
 			Logger.Debug().Msg("Advertising Home Assistant discovery messages")
