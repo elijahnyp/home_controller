@@ -75,9 +75,9 @@ type ActivityItem struct {
 
 // RoomDetail represents detailed room information
 type RoomDetail struct {
+	Name       string            `json:"name"`
 	Images     []RoomImage       `json:"images"`
 	Detections []DetectionResult `json:"detections"`
-	Name       string            `json:"name"`
 	Occupied   bool              `json:"occupied"`
 	Motion     bool              `json:"motion"`
 }
@@ -178,7 +178,7 @@ func (c *WSClient) writePump() {
 		}
 	}()
 
-	for {
+	for { //nolint:gosimple // Standard WebSocket message pump pattern
 		select {
 		case message, ok := <-c.send:
 			if !ok {
