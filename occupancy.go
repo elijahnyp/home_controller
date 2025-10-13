@@ -570,8 +570,22 @@ func Init() {
 }
 
 func subscribeOccupancyTopics() {
+	// Register new subscriptions
 	for _, topic := range model.SubscribeTopics() {
+		Logger.Debug().Msgf("Registering subscription for topic: %s", topic)
 		RegisterMQTTSubscription(topic, receiver)
+	}
+	
+	// If client is already connected, subscribe immediately
+	if Client != nil && Client.IsConnected() {
+		Logger.Debug().Msg("Client connected - subscribing to topics now")
+		for _, topic := range model.SubscribeTopics() {
+			if token := Client.Subscribe(topic, 0, receiver); token.Wait() && token.Error() != nil {
+				Logger.Error().Msgf("Error subscribing to %s: %v", topic, token.Error())
+			} else {
+				Logger.Info().Msgf("Subscribed to topic: %s", topic)
+			}
+		}
 	}
 }
 
