@@ -575,7 +575,7 @@ func subscribeOccupancyTopics() {
 		Logger.Debug().Msgf("Registering subscription for topic: %s", topic)
 		RegisterMQTTSubscription(topic, receiver)
 	}
-	
+
 	// If client is already connected, subscribe immediately
 	if Client != nil && Client.IsConnected() {
 		Logger.Debug().Msg("Client connected - subscribing to topics now")
