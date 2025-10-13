@@ -4,6 +4,7 @@ metadata:
   labels:
     teleport-app: occupancy-controller
     app: occupancy-controller
+    teleport.nyp-itsours.com/app: discover
   name: occupancy-controller-service
   annotations:
     teleport.dev/name: occupancy-controller
