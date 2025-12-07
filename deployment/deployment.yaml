@@ -23,10 +23,11 @@ kind: Ingress
 metadata:
   name: occupancy-controller
   annotations:
-    kubernetes.io/ingress.class: "nginx"
-    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    # kubernetes.io/ingress.class: "nginx"
+    # nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
     cert-manager.io/cluster-issuer: internal
 spec:
+  ingressClassName: traefik-private
   tls:
     - hosts:
       - occupancy.kube.artynet.local
