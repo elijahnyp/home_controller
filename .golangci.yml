@@ -5,6 +5,8 @@ run:
   timeout: 5m
   issues-exit-code: 1
   tests: true
+  exclude-dirs:
+    - triton/generated
 
 issues:
   max-issues-per-linter: 0
@@ -72,10 +74,13 @@ linters-settings:
     checks: ["all"]
     
   govet:
-    check-shadowing: true
     enable-all: true
-    
+    settings:
+      shadow:
+        strict: true
+
 output:
-  format: colored-line-number
-  print-issued-line: true
+  formats:
+    - format: colored-line-number
+  print-issued-lines: true
   print-linter-name: true
