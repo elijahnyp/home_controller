@@ -9,7 +9,6 @@ import (
 	"image/color"
 	"image/jpeg"
 	"io"
-	"mime/multipart"
 	"net/http"
 	"strconv"
 	"time"
@@ -100,79 +99,47 @@ func ProcessImageRoutine() {
 }
 
 func ProcessImage(mimage MQTT_Item) {
-	// create form for upload
-	upload_body := bytes.NewBuffer(nil)
-	multipartWriter := multipart.NewWriter(upload_body)
-	part, err := multipartWriter.CreateFormFile("image", "snap.jpeg")
+	detections, err := DetectObjects(mimage.Data)
 	if err != nil {
-		Logger.Error().Msgf("Error reading image: %v", err.Error())
+		Logger.Warn().Msgf("Triton inference error for %s: %v", mimage.Topic, err)
+		return
 	}
 
-	// copy image into form
-	copied, err := io.Copy(part, bytes.NewReader(mimage.Data))
-	if err != nil {
-		Logger.Error().Msgf("Error copying image into form: %v", err.Error())
-	} else if copied < 1 {
-		Logger.Warn().Msg("empty copying image into form but no error reported")
-	}
-
-	// set minimum confidence
-	if fieldErr := multipartWriter.WriteField("min_confidence", "0.5"); fieldErr != nil {
-		Logger.Error().Msgf("Error writing form field: %v", fieldErr)
-		return
-	}
-	if closeErr := multipartWriter.Close(); closeErr != nil {
-		Logger.Error().Msgf("Error closing multipart writer: %v", closeErr)
-		return
-	} // must close or http client doesn't put in content length - can't use defer
-	// send request
-	req, err := http.NewRequest("POST", Config.GetString("detection_url"), upload_body)
-	if err != nil {
-		Logger.Warn().Msgf("Error posting form to ai server %v", err.Error())
-		return
-	}
-	req.Header.Set("Content-Type", multipartWriter.FormDataContentType())
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		Logger.Warn().Msgf("Error reading result from ai server: %v", err.Error())
-		return
-	}
-	defer func() {
-		if closeErr := resp.Body.Close(); closeErr != nil {
-			Logger.Warn().Msgf("Error closing response body: %v", closeErr)
-		}
-	}()
-	if resp.StatusCode > 299 || resp.StatusCode < 200 {
-		Logger.Warn().Msgf("non-2xx code received: %d", resp.StatusCode)
-		return
-	}
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		Logger.Warn().Msgf("Error reading response body: %v", err)
-		return
-	}
+	// Translate TritonDetection → ai_result so the rest of the codebase
+	// (cache, API, markup) continues to work without changes.
 	var results ai_results
-	err = json.Unmarshal(body, &results)
-	if err != nil {
-		Logger.Warn().Msgf("Unable to unmarshal ai result: %v", err.Error())
-		return
+	for _, d := range detections {
+		results.Predictions = append(results.Predictions, ai_result{
+			Label:      d.Label,
+			Confidence: d.Confidence,
+			X_min:      d.XMin,
+			Y_min:      d.YMin,
+			X_max:      d.XMax,
+			Y_max:      d.YMax,
+		})
 	}
 	results.Timestamp = time.Now().Unix()
-	// cache the bloody thing
+	results.Success = true
+
 	cache[mimage.Topic] = ImageCacheItem{mimage.Data, results}
+
 	var person = false
-	var confidence float32 = 0.0
-	for _, result := range results.Predictions {
-		if result.Label == "person" {
+	var confidence float32
+	minConf := float32(Config.GetFloat64("min_confidence"))
+	if minConf <= 0 {
+		minConf = 0.5
+	}
+	for _, r := range results.Predictions {
+		if r.Label == "person" {
 			person = true
-			if confidence < result.Confidence {
-				confidence = result.Confidence
+			if confidence < r.Confidence {
+				confidence = r.Confidence
 			}
-			break
 		}
 	}
-	if person && confidence >= float32(Config.GetFloat64("min_confidence")) {
-		Logger.Debug().Msgf("%s occupied: %f", mimage.Topic, confidence)
+
+	if person && confidence >= minConf {
+		Logger.Debug().Msgf("%s occupied: %.3f", mimage.Topic, confidence)
 		mimage.Analysis_result = OCCUPIED
 	} else {
 		Logger.Debug().Msgf("%s unoccupied", mimage.Topic)
@@ -563,7 +530,9 @@ func ModelApi(w http.ResponseWriter, r *http.Request) {
 
 // init
 func Init() {
-	http.DefaultClient.Timeout = 10 * time.Second
+	if err := InitTritonClient(); err != nil {
+		Logger.Fatal().Msgf("Failed to initialize Triton client: %v", err)
+	}
 	go ProcessImageRoutine()
 	go OccupancyManagerRoutine()
 	go MotionManagerRoutine()
@@ -627,6 +596,11 @@ func main() {
 		}
 	})
 	RegisterNewConfigListener(subscribeOccupancyTopics)
+	RegisterNewConfigListener(func() {
+		if err := InitTritonClient(); err != nil {
+			Logger.Error().Msgf("Failed to reinitialize Triton client on config change: %v", err)
+		}
+	})
 	RegisterMQTTConnectHook("haadvertise", func(client MQTT.Client) {
 		AdvertiseHA(model.Rooms, client)
 	})

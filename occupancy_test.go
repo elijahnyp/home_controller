@@ -2,87 +2,135 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"encoding/binary"
 	"encoding/json"
 	"image"
 	"image/color"
 	"image/jpeg"
-	"net/http"
+	"math"
+	"net"
 	"net/http/httptest"
 	"testing"
 	"time"
 
 	MQTT "github.com/eclipse/paho.mqtt.golang"
+	tritonpb "github.com/elijahnyp/home_controller/triton/generated"
 	. "github.com/elijahnyp/home_controller/util"
+	"google.golang.org/grpc"
 )
 
-func TestProcessImage(t *testing.T) {
-	// Setup mock HTTP server for AI detection
-	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != "POST" {
-			t.Errorf("Expected POST request, got %s", r.Method)
-		}
+// mockTritonServer implements just ModelInfer, returning a single person detection.
+type mockTritonServer struct {
+	tritonpb.UnimplementedGRPCInferenceServiceServer
+}
 
-		// Return mock AI response
-		response := ai_results{
-			Success:   true,
-			Timestamp: time.Now().Unix(),
-			Predictions: []ai_result{
-				{
-					Confidence: 0.85,
-					Label:      "person",
-					X_min:      100,
-					Y_min:      100,
-					X_max:      200,
-					Y_max:      200,
-				},
+func (s *mockTritonServer) ModelInfer(_ context.Context, _ *tritonpb.ModelInferRequest) (*tritonpb.ModelInferResponse, error) {
+	// Build a minimal YOLO11 output tensor [1, 84, 8400] with one person.
+	const numClasses = 80
+	const numAnchors = 8400
+	numRows := 4 + numClasses
+	total := numRows * numAnchors
+
+	floats := make([]float32, total)
+	// Anchor 0: cx=320, cy=320, w=100, h=100, class[0]=0.9
+	floats[0*numAnchors+0] = 320 // cx
+	floats[1*numAnchors+0] = 320 // cy
+	floats[2*numAnchors+0] = 100 // w
+	floats[3*numAnchors+0] = 100 // h
+	floats[4*numAnchors+0] = 0.9 // person confidence
+
+	rawBytes := make([]byte, len(floats)*4)
+	for i, v := range floats {
+		binary.LittleEndian.PutUint32(rawBytes[i*4:], math.Float32bits(v))
+	}
+
+	return &tritonpb.ModelInferResponse{
+		ModelName: "yolo11",
+		Outputs: []*tritonpb.ModelInferResponse_InferOutputTensor{
+			{
+				Name:     "output0",
+				Datatype: "FP32",
+				Shape:    []int64{1, int64(numRows), int64(numAnchors)},
 			},
-		}
+		},
+		RawOutputContents: [][]byte{rawBytes},
+	}, nil
+}
 
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(response) //nolint:errcheck // test helper
-	}))
-	defer mockServer.Close()
+func startMockTritonServer(t *testing.T) (addr string, stop func()) {
+	t.Helper()
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to start mock triton listener: %v", err)
+	}
+	const maxMsgSize = 32 * 1024 * 1024 // 32 MB – needed for 640×640×3 FP32 input
+	srv := grpc.NewServer(
+		grpc.MaxRecvMsgSize(maxMsgSize),
+		grpc.MaxSendMsgSize(maxMsgSize),
+	)
+	tritonpb.RegisterGRPCInferenceServiceServer(srv, &mockTritonServer{})
+	go func() { _ = srv.Serve(lis) }()
+	return lis.Addr().String(), func() { srv.Stop() }
+}
 
-	// Setup test configuration
-	Config.Set("detection_url", mockServer.URL)
+func TestProcessImage(t *testing.T) {
+	// Start mock Triton gRPC server.
+	addr, stop := startMockTritonServer(t)
+	defer stop()
+
+	// Point client at the mock server.
+	Config.Set("triton_url", addr)
+	Config.Set("triton_model", "yolo11")
+	Config.Set("triton_input_width", 640)
+	Config.Set("triton_input_height", 640)
+	Config.Set("triton_input_name", "images")
+	Config.Set("triton_output_name", "output0")
 	Config.Set("min_confidence", 0.5)
+	Config.Set("triton_iou_threshold", 0.45)
 	Config.Set("frequency", 1)
 
-	// Create test image data
+	if err := InitTritonClient(); err != nil {
+		t.Fatalf("InitTritonClient: %v", err)
+	}
+
+	// Build a small test JPEG.
 	img := image.NewRGBA(image.Rect(0, 0, 100, 100))
 	for x := 0; x < 100; x++ {
 		for y := 0; y < 100; y++ {
-			img.Set(x, y, color.RGBA{255, 0, 0, 255})
+			img.Set(x, y, color.RGBA{R: 255, G: 0, B: 0, A: 255})
 		}
 	}
-
 	var buf bytes.Buffer
 	_ = jpeg.Encode(&buf, img, nil) //nolint:errcheck // test helper
+	jpegData := buf.Bytes()
 
-	// Create test MQTT item
+	// Verify DetectObjects works directly before testing via channel.
+	dets, err := DetectObjects(jpegData)
+	if err != nil {
+		t.Fatalf("DetectObjects: %v", err)
+	}
+	t.Logf("DetectObjects returned %d detection(s): %+v", len(dets), dets)
+
 	testItem := MQTT_Item{
 		Room:  "test_room",
-		Data:  buf.Bytes(),
+		Data:  jpegData,
 		Topic: "test/topic",
 		Type:  PIC,
 	}
 
-	// Initialize channels for testing
 	results_channel = make(chan MQTT_Item, 10)
-
-	// Process image
 	go ProcessImage(testItem)
 
-	// Wait for result
 	select {
 	case result := <-results_channel:
 		if result.Analysis_result != OCCUPIED {
-			t.Errorf("Expected OCCUPIED result, got %d", result.Analysis_result)
+			t.Errorf("Expected OCCUPIED, got %d", result.Analysis_result)
 		}
 		if result.Room != "test_room" {
 			t.Errorf("Expected room 'test_room', got %s", result.Room)
 		}
-	case <-time.After(5 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Error("Timeout waiting for image processing result")
 	}
 }
