@@ -70,7 +70,9 @@ func startMockTritonServer(t *testing.T) (addr string, stop func()) {
 		grpc.MaxSendMsgSize(maxMsgSize),
 	)
 	tritonpb.RegisterGRPCInferenceServiceServer(srv, &mockTritonServer{})
-	go func() { _ = srv.Serve(lis) }()
+	go func() {
+		_ = srv.Serve(lis) //nolint:errcheck // Serve returns nil on Stop(); error is not actionable in a test helper
+	}()
 	return lis.Addr().String(), func() { srv.Stop() }
 }
 

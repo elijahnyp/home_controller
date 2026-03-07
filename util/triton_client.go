@@ -60,7 +60,9 @@ func InitTritonClient() error {
 	}
 
 	if tritonClient != nil && tritonClient.conn != nil {
-		_ = tritonClient.conn.Close()
+		if closeErr := tritonClient.conn.Close(); closeErr != nil {
+			Logger.Warn().Err(closeErr).Msg("triton: error closing existing connection")
+		}
 	}
 
 	tritonClient = &TritonClient{
@@ -385,7 +387,7 @@ func min32(a, b float32) float32 {
 	return b
 }
 
-func clampInt(v, lo, hi int) int {
+func clampInt(v, lo, hi int) int { //nolint:unparam // lo is always 0 at call sites but function is kept general
 	if v < lo {
 		return lo
 	}

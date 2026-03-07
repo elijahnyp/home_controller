@@ -178,7 +178,7 @@ func (c *WSClient) writePump() {
 		}
 	}()
 
-	for { //nolint:gosimple // Standard WebSocket message pump pattern
+	for { //nolint:staticcheck // S1000: Standard WebSocket message pump pattern requires for+select
 		select {
 		case message, ok := <-c.send:
 			if !ok {
