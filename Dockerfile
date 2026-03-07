@@ -1,4 +1,4 @@
-FROM golang:1.24.2-alpine3.21 as BUILDER
+FROM golang:1.25-alpine AS builder
 
 RUN mkdir /src
 COPY ./ /src
@@ -9,7 +9,7 @@ RUN chmod +x /src/home_controller
 
 FROM alpine:3.21
 
-COPY --from=BUILDER /src/home_controller /home_controller/
-COPY --from=BUILDER /src/web /home_controller/web
+COPY --from=builder /src/home_controller /home_controller/
+COPY --from=builder /src/web /home_controller/web
 WORKDIR /home_controller
-CMD ./home_controller
+CMD ["./home_controller"]
