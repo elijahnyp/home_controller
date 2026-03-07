@@ -79,8 +79,4 @@ linters-settings:
       shadow:
         strict: true
 
-output:
-  formats:
-    - format: colored-line-number
-  print-issued-lines: true
-  print-linter-name: true
+
