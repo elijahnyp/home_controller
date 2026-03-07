@@ -9,7 +9,14 @@
     "frequency": 1,
     "occupancy_period_default": 120,
     "insecure_tls": true,
-    "detection_url": "https://deepstack/v1/vision/detection",
+    "triton_url": "10.0.4.226:8001",
+    "triton_model": "yolo11",
+    "triton_model_version": "",
+    "triton_input_width": 640,
+    "triton_input_height": 640,
+    "triton_input_name": "images",
+    "triton_output_name": "output0",
+    "triton_iou_threshold": 0.45,
     "model": {
         "rooms": [ 
             {

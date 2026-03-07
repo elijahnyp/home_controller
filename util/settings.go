@@ -58,6 +58,17 @@ func SetupConfig() {
 	Config.SetDefault("Frequency", 30)
 	Config.SetDefault("Occupancy_period", 150)
 
+	// Triton gRPC inference defaults
+	Config.SetDefault("triton_url", "10.0.4.226:8001")
+	Config.SetDefault("triton_model", "yolo11")
+	Config.SetDefault("triton_model_version", "")
+	Config.SetDefault("triton_input_width", 640)
+	Config.SetDefault("triton_input_height", 640)
+	Config.SetDefault("triton_input_name", "images")
+	Config.SetDefault("triton_output_name", "output0")
+	Config.SetDefault("triton_iou_threshold", 0.45)
+	Config.SetDefault("min_confidence", 0.5)
+
 	// config file
 	Config.SetConfigName("home_controller")
 	Config.AddConfigPath("/")
