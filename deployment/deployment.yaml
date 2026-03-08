@@ -61,14 +61,14 @@ spec:
       labels:
         app: occupancy-controller
     spec:
-      tolerations:
-      - key: "node-type"
-        operator: "Equal"
-        value: "rpi4"
-        effect: "NoSchedule"
-      - key: "coral"
-        operator: "Exists"
-        effect: "PreferNoSchedule"
+      # tolerations:
+      # - key: "node-type"
+      #   operator: "Equal"
+      #   value: "rpi4"
+      #   effect: "NoSchedule"
+      # - key: "coral"
+      #   operator: "Exists"
+      #   effect: "PreferNoSchedule"
       imagePullSecrets:
       - name: nypregcred
       containers:
@@ -84,11 +84,11 @@ spec:
             name: mqtt-creds
         resources:
           requests:
-            cpu: 25m
-            memory: 50Mi
+            cpu: 50m
+            memory: 100Mi
           limits:
-            cpu: 100m
-            memory: 200Mi
+            cpu: 500m
+            memory: 250Mi
         volumeMounts:
         - name: config-file
           mountPath: /home_controller/config
