@@ -57,6 +57,7 @@ func SetupConfig() {
 	Config.SetDefault("Password", "")
 	Config.SetDefault("Frequency", 30)
 	Config.SetDefault("Occupancy_period", 150)
+	Config.SetDefault("inference_concurrency", 4)
 
 	// Triton gRPC inference defaults
 	Config.SetDefault("triton_url", "10.0.4.226:8001")

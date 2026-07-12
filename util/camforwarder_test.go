@@ -115,9 +115,10 @@ func TestProcess_job_Success(t *testing.T) {
 	}))
 	defer mockServer.Close()
 
-	// Setup mock MQTT client
-	mockClient := &MockMQTTClient{}
+	// Setup mock MQTT client (connected so the async publisher delivers).
+	mockClient := &MockMQTTClient{connected: true}
 	Client = mockClient
+	StartPublisher()
 
 	// Create test job
 	job := CamForwarderCamera{
@@ -125,14 +126,16 @@ func TestProcess_job_Success(t *testing.T) {
 		Topic: "test/camera/image",
 	}
 
-	// Process the job
+	// Process the job (publish is delivered asynchronously).
 	process_job(job)
 
 	// Verify MQTT publish was called
-	if len(mockClient.publishCalls) != 1 {
-		t.Errorf("Expected 1 MQTT publish call, got %d", len(mockClient.publishCalls))
+	if !waitForPublishes(mockClient, 1) {
+		t.Errorf("Expected 1 MQTT publish call, got %d", publishCount(mockClient))
 	} else {
+		mockClient.mu.RLock()
 		call := mockClient.publishCalls[0]
+		mockClient.mu.RUnlock()
 		if call.Topic != "test/camera/image" {
 			t.Errorf("Published to topic %s, expected test/camera/image", call.Topic)
 		}
@@ -230,9 +233,10 @@ func TestCam_worker(t *testing.T) {
 	}))
 	defer mockServer.Close()
 
-	// Setup mock MQTT client
-	mockClient := &MockMQTTClient{}
+	// Setup mock MQTT client (connected so the async publisher delivers).
+	mockClient := &MockMQTTClient{connected: true}
 	Client = mockClient
+	StartPublisher()
 
 	// Start worker in goroutine
 	go cam_worker(testQueue)
@@ -245,22 +249,16 @@ func TestCam_worker(t *testing.T) {
 
 	testQueue <- job
 
-	// Give worker time to process
-	time.Sleep(100 * time.Millisecond)
-
-	// Verify MQTT publish was called (with proper synchronization)
-	mockClient.mu.RLock()
-	publishCallsLen := len(mockClient.publishCalls)
-	var call PublishCall
-	if publishCallsLen > 0 {
-		call = mockClient.publishCalls[0]
-	}
-	mockClient.mu.RUnlock()
-
-	if publishCallsLen != 1 {
-		t.Errorf("Expected 1 MQTT publish call from worker, got %d", publishCallsLen)
-	} else if call.Topic != "test/worker/image" {
-		t.Errorf("Worker published to topic %s, expected test/worker/image", call.Topic)
+	// Verify MQTT publish was delivered (fetch worker + async publisher).
+	if !waitForPublishes(mockClient, 1) {
+		t.Errorf("Expected 1 MQTT publish call from worker, got %d", publishCount(mockClient))
+	} else {
+		mockClient.mu.RLock()
+		call := mockClient.publishCalls[0]
+		mockClient.mu.RUnlock()
+		if call.Topic != "test/worker/image" {
+			t.Errorf("Worker published to topic %s, expected test/worker/image", call.Topic)
+		}
 	}
 
 	// Close queue to stop worker

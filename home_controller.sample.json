@@ -7,6 +7,7 @@
     "log_level": "info",
     "min_confidence": 0.5,
     "frequency": 1,
+    "inference_concurrency": 4,
     "occupancy_period_default": 120,
     "insecure_tls": true,
     "triton_url": "10.0.4.226:8001",

@@ -91,7 +91,6 @@ func process_job(job CamForwarderCamera) {
 		RecordCamFetch("read_err", time.Since(start))
 		return
 	}
-	token := Client.Publish(job.Topic, byte(0), false, img)
-	token.Wait()
+	PublishAsync(job.Topic, byte(0), false, img)
 	RecordCamFetch("ok", time.Since(start))
 }

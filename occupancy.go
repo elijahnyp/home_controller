@@ -72,12 +72,14 @@ var results_channel = make(chan MQTT_Item, 10)
 var motion_channel = make(chan MQTT_Item, 10)
 var door_channel = make(chan MQTT_Item, 10)
 
-// inferenceConcurrency bounds the number of images processed by Triton at once,
+// inferenceSem bounds the number of images processed by Triton at once,
 // preventing unbounded goroutine/RPC fan-out when images arrive faster than the
-// inference server can keep up.
-const inferenceConcurrency = 4
+// inference server can keep up. Its capacity is set from the
+// `inference_concurrency` config at startup (see Init); it is initialized to the
+// default here so it is never nil.
+const defaultInferenceConcurrency = 4
 
-var inferenceSem = make(chan struct{}, inferenceConcurrency)
+var inferenceSem = make(chan struct{}, defaultInferenceConcurrency)
 
 // image processing: a single dispatcher applies the per-topic throttle (so the
 // last_processed map stays goroutine-confined) then hands work to the bounded
@@ -555,6 +557,12 @@ func Init() {
 	if err := InitTritonClient(); err != nil {
 		Logger.Fatal().Msgf("Failed to initialize Triton client: %v", err)
 	}
+	concurrency := Config.GetInt("inference_concurrency")
+	if concurrency <= 0 {
+		concurrency = defaultInferenceConcurrency
+	}
+	inferenceSem = make(chan struct{}, concurrency)
+	Logger.Info().Msgf("inference concurrency set to %d", concurrency)
 	StartPublisher()
 	go ProcessImageRoutine()
 	go OccupancyManagerRoutine()
