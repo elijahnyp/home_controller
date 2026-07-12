@@ -1,8 +1,6 @@
 package util
 
 import (
-	"fmt"
-
 	MQTT "github.com/eclipse/paho.mqtt.golang"
 )
 
@@ -47,7 +45,7 @@ func subscribe() {
 	}
 	for topic, handler := range subscriptions {
 		if token := Client.Subscribe(topic, 0, handler); token.Wait() && token.Error() != nil {
-			Logger.Panic().Msgf("Error Subscribing: %v", fmt.Errorf("%v", token.Error()))
+			Logger.Error().Msgf("Error subscribing to %s: %v", topic, token.Error())
 		}
 	}
 }
@@ -95,7 +93,7 @@ func MqttInit() {
 	Client = MQTT.NewClient(opts)
 
 	if token := Client.Connect(); token.Wait() && token.Error() != nil {
-		panic(token.Error())
+		Logger.Error().Msgf("Error connecting to MQTT broker: %v", token.Error())
 	}
 	// for _, topic := range Config.GetStringSlice("topics") {
 

@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	MQTT "github.com/eclipse/paho.mqtt.golang"
@@ -49,13 +50,9 @@ type MQTT_Item struct { //nolint:govet // struct layout optimized for clarity ov
 }
 
 var last_processed = make(map[string]int64)
-var cache = make(map[string]ImageCacheItem)
 
-// Global state tracking for web interface
-var last_occupancy_state = make(map[string]bool)
-var last_motion_state = make(map[string]bool)
-
-var model Model
+// Shared state (cache, last_occupancy_state, last_motion_state) and the model
+// config pointer now live in state_sync.go behind synchronization.
 
 var cam_forwarder CamForwarder
 
@@ -75,15 +72,18 @@ var results_channel = make(chan MQTT_Item, 10)
 var motion_channel = make(chan MQTT_Item, 10)
 var door_channel = make(chan MQTT_Item, 10)
 
-// //door processing
-// func ProcessDoorRoutine(){
-// 	for {
-// 		item := <- door_channel
+// inferenceSem bounds the number of images processed by Triton at once,
+// preventing unbounded goroutine/RPC fan-out when images arrive faster than the
+// inference server can keep up. Its capacity is set from the
+// `inference_concurrency` config at startup (see Init); it is initialized to the
+// default here so it is never nil.
+const defaultInferenceConcurrency = 4
 
-// 	}
-// }
+var inferenceSem = make(chan struct{}, defaultInferenceConcurrency)
 
-// image processing
+// image processing: a single dispatcher applies the per-topic throttle (so the
+// last_processed map stays goroutine-confined) then hands work to the bounded
+// inference pool.
 func ProcessImageRoutine() {
 	for {
 		item := <-image_channel
@@ -91,9 +91,14 @@ func ProcessImageRoutine() {
 		if last_processed[item.Topic] < now-Config.GetInt64("Frequency") {
 			last_processed[item.Topic] = now
 			Logger.Debug().Msgf("Processing image from %s", item.Topic)
-			go ProcessImage(item)
+			inferenceSem <- struct{}{}
+			go func(it MQTT_Item) {
+				defer func() { <-inferenceSem }()
+				ProcessImage(it)
+			}(item)
 		} else {
 			Logger.Debug().Msgf("Skipping image from %s", item.Topic)
+			RecordImageSkipped("throttled")
 		}
 	}
 }
@@ -121,7 +126,7 @@ func ProcessImage(mimage MQTT_Item) {
 	results.Timestamp = time.Now().Unix()
 	results.Success = true
 
-	cache[mimage.Topic] = ImageCacheItem{mimage.Data, results}
+	CacheSet(mimage.Topic, ImageCacheItem{mimage.Data, results})
 
 	var person = false
 	var confidence float32
@@ -130,6 +135,7 @@ func ProcessImage(mimage MQTT_Item) {
 		minConf = 0.5
 	}
 	for _, r := range results.Predictions {
+		RecordObject(mimage.Room, r.Label, float64(r.Confidence))
 		if r.Label == "person" {
 			person = true
 			if confidence < r.Confidence {
@@ -140,6 +146,7 @@ func ProcessImage(mimage MQTT_Item) {
 
 	if person && confidence >= minConf {
 		Logger.Debug().Msgf("%s occupied: %.3f", mimage.Topic, confidence)
+		RecordPersonDetection(mimage.Room)
 		mimage.Analysis_result = OCCUPIED
 	} else {
 		Logger.Debug().Msgf("%s unoccupied", mimage.Topic)
@@ -152,38 +159,43 @@ func ProcessImage(mimage MQTT_Item) {
 
 func OccupancyManagerRoutine() {
 	/*
-		remember, motion and cam messages are separate, so only one type is checked at a time
-		occupancy on comes from either motion or cam
+		remember, motion, cam, and door messages are separate, so only one type is
+		checked at a time.
+		occupancy on comes from motion, cam (person), or a door opening
 		occupancy off comes from expired cam period AND motion off
 
 		Basically, cameras are checked every x seconds and must not see a person in y seconds to say 'no person'
-		Motion resets the period as does seeing a person.
+		Motion (and a door opening) resets the period as does seeing a person.
 		Unoccupied only triggered if cam says 'no person' and motion is off
 	*/
 	for {
 		item := <-results_channel // pickup work
 		now := time.Now().Unix()
-		occupancy_topic := model.FindOccupancyTopicByRoom(item.Room)
+		occupancy_topic := CurrentModel().FindOccupancyTopicByRoom(item.Room)
 		cam_opinion := true
 		var message string
-		room := model.ModelStatus().Room_status[item.Room]
-		if item.Analysis_result == OCCUPIED {
+		room := CurrentModel().GetRoomStatus(item.Room)
+		switch item.Analysis_result {
+		case OCCUPIED:
 			room.Occupied()
 			cam_opinion = true
-		} else if item.Analysis_result == UNOCCUPIED {
-			if room.GetLastOccupied() < now-model.RoomOccupancyPeriod(item.Room) {
+		case UNOCCUPIED:
+			if room.GetLastOccupied() < now-CurrentModel().RoomOccupancyPeriod(item.Room) {
 				Logger.Debug().Msgf("%s OCCUPANCY PERIOD EXPIRED", item.Room)
 				room.Unoccupied()
 				cam_opinion = false
 			} else {
 				cam_opinion = true
 			}
-		}
-		if item.Analysis_result == MOTION_START {
+		case MOTION_START:
 			room.Occupied()
 			room.Motion(true)
-		} else if item.Analysis_result == MOTION_STOP {
+		case MOTION_STOP:
 			room.Motion(false)
+		case DOOR_OPEN:
+			// Intent: an opening door marks the room occupied and resets the
+			// timer, without asserting continuous motion.
+			room.Occupied()
 		}
 		if !cam_opinion && !room.GetMotionState() {
 			message = "false"
@@ -191,93 +203,103 @@ func OccupancyManagerRoutine() {
 			message = "true"
 		}
 
-		// Update global state for web interface
-		last_occupancy_state[item.Room] = (message == "true")
+		occupied := message == "true"
+
+		// Record occupancy transitions before updating the stored state.
+		if prev, existed := GetOccupancyState(item.Room); !existed || prev != occupied {
+			if occupied {
+				RecordOccupancyTransition(item.Room, "occupied")
+			} else {
+				RecordOccupancyTransition(item.Room, "unoccupied")
+			}
+		}
+
+		// Update web-facing state.
+		SetOccupancyState(item.Room, occupied)
 
 		// Broadcast update via WebSocket if available
 		if wsHub != nil {
 			wsHub.BroadcastUpdate("room_status", map[string]interface{}{
 				"room":            item.Room,
-				"occupied":        message == "true",
+				"occupied":        occupied,
 				"motion":          room.GetMotionState(),
 				"person_detected": cam_opinion,
 			})
 		}
 
-		model.UpdateRoomStatus(item.Room, room)
-		token := Client.Publish(occupancy_topic, byte(0), false, message)
-		token.Wait() // this is VERY BAD
+		CurrentModel().UpdateRoomStatus(item.Room, room)
+		PublishAsync(occupancy_topic, byte(0), false, []byte(message))
+	}
+}
+
+// setMotionTracking records the motion state for a matching motion topic.
+func setMotionTracking(room, topic string, on bool) {
+	for _, r := range CurrentModel().Rooms {
+		if r.Name == room {
+			for _, t := range r.Motion_topics {
+				if t == topic {
+					SetMotionState(topic, on)
+				}
+			}
+		}
 	}
 }
 
 func MotionManagerRoutine() {
 	for {
 		item := <-motion_channel
-		// process data - handle multiple on options?
-		// Logger.Debug().Msgf("%s motion %s", item.Room, string(item.Data))
 		if numd, err := strconv.Atoi(string(item.Data)); err == nil {
 			Logger.Debug().Msgf("%s motion integer received: %d", item.Room, numd)
-			switch numd {
-			case 0:
+			if numd == 0 {
 				item.Analysis_result = MOTION_STOP
-				// Update motion state tracking
-				for _, room := range model.Rooms {
-					if room.Name == item.Room {
-						for _, topic := range room.Motion_topics {
-							if topic == item.Topic {
-								last_motion_state[topic] = false
-							}
-						}
-					}
-				}
-				results_channel <- item
-				continue
-			default:
+				setMotionTracking(item.Room, item.Topic, false)
+			} else {
 				item.Analysis_result = MOTION_START
-				// Update motion state tracking
-				for _, room := range model.Rooms {
-					if room.Name == item.Room {
-						for _, topic := range room.Motion_topics {
-							if topic == item.Topic {
-								last_motion_state[topic] = true
-							}
-						}
-					}
-				}
-				results_channel <- item
-				continue
+				setMotionTracking(item.Room, item.Topic, true)
 			}
-		} else {
-			Logger.Debug().Msgf("%s motion string received: %s", item.Room, string(item.Data))
-			if string(item.Data) == "OFF" || string(item.Data) == "OPEN" {
-				item.Analysis_result = MOTION_STOP
-				// Update motion state tracking
-				for _, room := range model.Rooms {
-					if room.Name == item.Room {
-						for _, topic := range room.Motion_topics {
-							if topic == item.Topic {
-								last_motion_state[topic] = false
-							}
-						}
-					}
-				}
-				results_channel <- item
-				continue
-			} else if string(item.Data) == "ON" || string(item.Data) == "CLOSED" {
-				item.Analysis_result = MOTION_START
-				// Update motion state tracking
-				for _, room := range model.Rooms {
-					if room.Name == item.Room {
-						for _, topic := range room.Motion_topics {
-							if topic == item.Topic {
-								last_motion_state[topic] = true
-							}
-						}
-					}
-				}
-				results_channel <- item
-				continue
-			}
+			results_channel <- item
+			continue
+		}
+		Logger.Debug().Msgf("%s motion string received: %s", item.Room, string(item.Data))
+		switch string(item.Data) {
+		case "OFF":
+			item.Analysis_result = MOTION_STOP
+			setMotionTracking(item.Room, item.Topic, false)
+			results_channel <- item
+		case "ON":
+			item.Analysis_result = MOTION_START
+			setMotionTracking(item.Room, item.Topic, true)
+			results_channel <- item
+		case "OPEN":
+			// A door reported via a motion topic: treat an opening as an
+			// occupancy trigger (see DoorManagerRoutine for dedicated door topics).
+			item.Analysis_result = DOOR_OPEN
+			results_channel <- item
+		case "CLOSED":
+			// A closing door is not itself an occupancy signal; the cam/motion
+			// timers drive the room back to unoccupied.
+			Logger.Debug().Msgf("%s door closed (no-op)", item.Room)
+		default:
+			Logger.Debug().Msgf("%s unrecognized motion payload: %s", item.Room, string(item.Data))
+		}
+	}
+}
+
+// DoorManagerRoutine consumes dedicated door topics. An opening door marks the
+// room occupied; a closing door is a no-op (timers handle un-occupancy).
+func DoorManagerRoutine() {
+	for {
+		item := <-door_channel
+		payload := string(item.Data)
+		Logger.Debug().Msgf("%s door event received: %s", item.Room, payload)
+		switch payload {
+		case "OPEN", "ON", "1", "true":
+			item.Analysis_result = DOOR_OPEN
+			results_channel <- item
+		case "CLOSED", "OFF", "0", "false":
+			Logger.Debug().Msgf("%s door closed (no-op)", item.Room)
+		default:
+			Logger.Debug().Msgf("%s unrecognized door payload: %s", item.Room, payload)
 		}
 	}
 }
@@ -373,7 +395,7 @@ func HttpImage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		id := r.FormValue("id")
-		cacheitem := cache[id]
+		cacheitem, _ := CacheGet(id)
 		if cacheitem.im != nil {
 			var spec []MarkupSpec
 			for _, i := range cacheitem.results.Predictions {
@@ -416,7 +438,7 @@ func RoomOverview(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		room := r.FormValue("room")
-		for _, r := range model.Rooms {
+		for _, r := range CurrentModel().Rooms {
 			if r.Name == room {
 				w.Header().Add("Content-Type", "text/html")
 				writeString := func(s string) {
@@ -446,12 +468,12 @@ func StatusOverview(w http.ResponseWriter, r *http.Request) {
 		}
 		writeString("<html><body><table>")
 		writeString("<tr><th>Room</th><th>Last Occupied (seconds ago)</th><th>Motion State</th><th>Timeout</th></tr>")
-		for room, status := range model.ModelStatus().Room_status {
+		for room, status := range CurrentModel().SnapshotRoomStatuses() {
 			writeString("<tr>")
 			writeString(fmt.Sprintf("<td><a href=\"/room?room=%s\">%s</a></td>", room, room))
 			writeString(fmt.Sprintf("<td>%d</td>", now-status.GetLastOccupied()))
 			writeString(fmt.Sprintf("<td>%v</td>", status.GetMotionState()))
-			writeString(fmt.Sprintf("<td>%d</td>", model.RoomOccupancyPeriod(room)))
+			writeString(fmt.Sprintf("<td>%d</td>", CurrentModel().RoomOccupancyPeriod(room)))
 			writeString("</tr>")
 		}
 		writeString("</body></html>")
@@ -472,11 +494,12 @@ func ModelApi(w http.ResponseWriter, r *http.Request) {
 		}
 		room := r.FormValue("room")
 		if room != "" {
-			for _, r := range model.Rooms {
+			for _, r := range CurrentModel().Rooms {
 				if r.Name == room {
 					ai := make(map[string]ai_results)
 					for _, t := range r.Pic_topics {
-						ai[t] = cache[t].results
+						ci, _ := CacheGet(t)
+						ai[t] = ci.results
 					}
 					w.Header().Add("Content-Type", "application/json")
 					answer[r.Name] = modelapiresponseitem{
@@ -495,10 +518,11 @@ func ModelApi(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		} else {
-			for _, r := range model.Rooms {
+			for _, r := range CurrentModel().Rooms {
 				ai := make(map[string]ai_results)
 				for _, t := range r.Pic_topics {
-					ai[t] = cache[t].results
+					ci, _ := CacheGet(t)
+					ai[t] = ci.results
 				}
 				w.Header().Add("Content-Type", "application/json")
 				answer[r.Name] = modelapiresponseitem{
@@ -533,28 +557,68 @@ func Init() {
 	if err := InitTritonClient(); err != nil {
 		Logger.Fatal().Msgf("Failed to initialize Triton client: %v", err)
 	}
+	concurrency := Config.GetInt("inference_concurrency")
+	if concurrency <= 0 {
+		concurrency = defaultInferenceConcurrency
+	}
+	inferenceSem = make(chan struct{}, concurrency)
+	Logger.Info().Msgf("inference concurrency set to %d", concurrency)
+	StartPublisher()
 	go ProcessImageRoutine()
 	go OccupancyManagerRoutine()
 	go MotionManagerRoutine()
+	go DoorManagerRoutine()
 }
 
+// subscribedTopics tracks the topics we currently hold an MQTT subscription for,
+// so a config reload can unsubscribe topics that were removed rather than leaking
+// stale subscriptions.
+var (
+	subscribedMu     sync.Mutex
+	subscribedTopics = make(map[string]bool)
+)
+
 func subscribeOccupancyTopics() {
-	// Register new subscriptions
-	for _, topic := range model.SubscribeTopics() {
-		Logger.Debug().Msgf("Registering subscription for topic: %s", topic)
-		RegisterMQTTSubscription(topic, receiver)
+	subscribedMu.Lock()
+	defer subscribedMu.Unlock()
+
+	desired := make(map[string]bool)
+	for _, topic := range CurrentModel().SubscribeTopics() {
+		desired[topic] = true
 	}
 
-	// If client is already connected, subscribe immediately
-	if Client != nil && Client.IsConnected() {
-		Logger.Debug().Msg("Client connected - subscribing to topics now")
-		for _, topic := range model.SubscribeTopics() {
+	connected := Client != nil && Client.IsConnected()
+
+	// Subscribe to newly desired topics.
+	for topic := range desired {
+		if subscribedTopics[topic] {
+			continue
+		}
+		Logger.Debug().Msgf("Registering subscription for topic: %s", topic)
+		RegisterMQTTSubscription(topic, receiver)
+		if connected {
 			if token := Client.Subscribe(topic, 0, receiver); token.Wait() && token.Error() != nil {
 				Logger.Error().Msgf("Error subscribing to %s: %v", topic, token.Error())
-			} else {
-				Logger.Info().Msgf("Subscribed to topic: %s", topic)
+				continue
+			}
+			Logger.Info().Msgf("Subscribed to topic: %s", topic)
+		}
+		subscribedTopics[topic] = true
+	}
+
+	// Unsubscribe from topics that are no longer in the config.
+	for topic := range subscribedTopics {
+		if desired[topic] {
+			continue
+		}
+		Logger.Info().Msgf("Unsubscribing from removed topic: %s", topic)
+		RegisterMQTTSubscription(topic, nil)
+		if connected {
+			if token := Client.Unsubscribe(topic); token.Wait() && token.Error() != nil {
+				Logger.Error().Msgf("Error unsubscribing from %s: %v", topic, token.Error())
 			}
 		}
+		delete(subscribedTopics, topic)
 	}
 }
 
@@ -563,25 +627,28 @@ func receiver(client MQTT.Client, message MQTT.Message) {
 	var mitem MQTT_Item
 	mitem.Data = message.Payload()
 	mitem.Topic = message.Topic()
-	mitem.Room = model.FindRoomByTopic(message.Topic())
-	switch model.FindTopicType(message.Topic()) {
+	mitem.Room = CurrentModel().FindRoomByTopic(message.Topic())
+	switch CurrentModel().FindTopicType(message.Topic()) {
 	case PIC:
 		mitem.Type = PIC
+		RecordMessageReceived("pic")
 		Logger.Debug().Msgf("image message received: queue len %v", len(image_channel))
 		image_channel <- mitem
 	case MOTION:
 		mitem.Type = MOTION
+		RecordMessageReceived("motion")
 		Logger.Debug().Msgf("motion message received: queue len %v", len(motion_channel))
 		motion_channel <- mitem
-		// do something here
 	case OCCUPANCY:
 		mitem.Type = OCCUPANCY
-		// do something here
+		RecordMessageReceived("occupancy")
 	case DOOR:
 		mitem.Type = DOOR
+		RecordMessageReceived("door")
 		Logger.Debug().Msgf("door message received: queue len %v", len(door_channel))
 		door_channel <- mitem
 	default:
+		RecordMessageReceived("unknown")
 		Logger.Debug().Msgf("topic %s not found in model.  Fix subscription or add to model", message.Topic())
 	}
 }
@@ -591,9 +658,13 @@ func main() {
 	SetupConfig()
 	RegisterNewConfigListener(func() { LogInit(Config.GetString("log_level")) })
 	RegisterNewConfigListener(func() {
-		if err := model.BuildModel(); err != nil {
+		var m Model
+		if err := m.BuildModel(); err != nil {
 			Logger.Error().Msgf("Error building model: %v", err)
+			return
 		}
+		SetModel(&m)
+		RecordConfigReload()
 	})
 	RegisterNewConfigListener(subscribeOccupancyTopics)
 	RegisterNewConfigListener(func() {
@@ -601,8 +672,8 @@ func main() {
 			Logger.Error().Msgf("Failed to reinitialize Triton client on config change: %v", err)
 		}
 	})
-	RegisterMQTTConnectHook("haadvertise", func(client MQTT.Client) {
-		AdvertiseHA(model.Rooms, client)
+	RegisterMQTTConnectHook("haadvertise", func(_ MQTT.Client) {
+		AdvertiseHA(CurrentModel().Rooms)
 	})
 	RegisterNewConfigListener(MqttInit)
 	if Config.GetBool("insecure_tls") {
@@ -629,6 +700,13 @@ func main() {
 	monitor.AddHandler("/api/status", APISystemStatus)
 	monitor.AddHandler("/api/room", APIRoomDetail)
 	monitor.AddHandler("/room_detail", RoomDetailHandler)
+
+	// Prometheus metrics endpoint
+	if metricsHandler, err := InitMetrics(MetricProviders()); err != nil {
+		Logger.Error().Msgf("Error initializing metrics: %v", err)
+	} else {
+		monitor.AddRawHandler("/metrics", metricsHandler)
+	}
 	if err := monitor.Start(); err != nil {
 		Logger.Error().Msgf("Error starting monitor server: %v", err)
 	}
@@ -644,9 +722,7 @@ func main() {
 // online pinger
 func OnlinePinger() {
 	for {
-		if token := Client.Publish("hab/online", 0, false, "online"); token.Wait() && token.Error() != nil {
-			Logger.Error().Msgf("Error publishing online message: %v", token.Error())
-		}
+		PublishAsync("hab/online", 0, false, []byte("online"))
 		time.Sleep(10 * time.Second)
 	}
 }
@@ -659,7 +735,7 @@ func HAAdvertiser() {
 	for range ticker.C {
 		if Client != nil && Client.IsConnected() {
 			Logger.Debug().Msg("Advertising Home Assistant discovery messages")
-			AdvertiseHA(model.Rooms, Client)
+			AdvertiseHA(CurrentModel().Rooms)
 		}
 	}
 }

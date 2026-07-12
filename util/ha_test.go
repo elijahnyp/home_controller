@@ -3,6 +3,7 @@ package util
 import (
 	"encoding/json"
 	"testing"
+	"time"
 )
 
 func TestConstructHAAdvertisement(t *testing.T) {
@@ -145,23 +146,27 @@ func TestAdvertiseHA(t *testing.T) {
 		},
 	}
 
-	// Create mock MQTT client
-	mockClient := &MockMQTTClient{}
+	// Create mock MQTT client (connected so the async publisher delivers).
+	mockClient := &MockMQTTClient{connected: true}
+	Client = mockClient
+	StartPublisher()
 
-	// Call AdvertiseHA
-	AdvertiseHA(rooms, mockClient)
+	// Call AdvertiseHA (publishes are delivered asynchronously).
+	AdvertiseHA(rooms)
 
-	// Verify publish calls
-	expectedPublishCount := 2 // Only rooms with non-empty occupancy topics
-	if len(mockClient.publishCalls) != expectedPublishCount {
-		t.Errorf("Expected %d publish calls, got %d", expectedPublishCount, len(mockClient.publishCalls))
+	// Verify publish calls (only rooms with non-empty occupancy topics).
+	expectedPublishCount := 2
+	if !waitForPublishes(mockClient, expectedPublishCount) {
+		t.Errorf("Expected %d publish calls, got %d", expectedPublishCount, publishCount(mockClient))
 	}
 
 	// Check specific publish calls
 	publishedTopics := make(map[string]string) // topic -> payload
+	mockClient.mu.RLock()
 	for _, call := range mockClient.publishCalls {
-		publishedTopics[call.Topic] = call.Payload.(string) //nolint:errcheck // test helper
+		publishedTopics[call.Topic] = string(call.Payload.([]byte)) //nolint:errcheck // test helper
 	}
+	mockClient.mu.RUnlock()
 
 	// Verify living room advertisement
 	livingRoomTopic := "homeassistant/binary_sensor/living_room/occupancy/config"
@@ -273,7 +278,9 @@ func TestHAAvdvertisementAvailability(t *testing.T) {
 
 func TestAdvertiseHA_ErrorHandling(t *testing.T) {
 	// Test with mock client that simulates errors
-	mockClient := &MockMQTTClient{}
+	mockClient := &MockMQTTClient{connected: true}
+	Client = mockClient
+	StartPublisher()
 
 	// Create a room with occupancy topic
 	rooms := []Room{
@@ -290,10 +297,29 @@ func TestAdvertiseHA_ErrorHandling(t *testing.T) {
 		}
 	}()
 
-	AdvertiseHA(rooms, mockClient)
+	AdvertiseHA(rooms)
 
-	// Verify at least one publish call was made
-	if len(mockClient.publishCalls) != 1 {
-		t.Errorf("Expected 1 publish call, got %d", len(mockClient.publishCalls))
+	// Verify the publish call was delivered.
+	if !waitForPublishes(mockClient, 1) {
+		t.Errorf("Expected 1 publish call, got %d", publishCount(mockClient))
 	}
+}
+
+// publishCount returns the number of recorded publish calls (thread-safe).
+func publishCount(m *MockMQTTClient) int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return len(m.publishCalls)
+}
+
+// waitForPublishes polls until at least n publish calls are recorded or a short
+// deadline passes, accommodating the async publisher's worker delivery.
+func waitForPublishes(m *MockMQTTClient, n int) bool {
+	for i := 0; i < 100; i++ {
+		if publishCount(m) >= n {
+			return true
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return publishCount(m) >= n
 }

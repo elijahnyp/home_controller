@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	. "github.com/elijahnyp/home_controller/util"
@@ -31,10 +32,16 @@ type WSClient struct {
 
 // WSHub maintains the set of active clients and broadcasts messages
 type WSHub struct {
-	clients    map[*WSClient]bool
-	broadcast  chan WebSocketMessage
-	register   chan *WSClient
-	unregister chan *WSClient
+	clients     map[*WSClient]bool
+	broadcast   chan WebSocketMessage
+	register    chan *WSClient
+	unregister  chan *WSClient
+	clientCount atomic.Int64
+}
+
+// ClientCount returns the number of connected websocket clients (thread-safe).
+func (h *WSHub) ClientCount() int64 {
+	return h.clientCount.Load()
 }
 
 // SystemStatus represents the overall system status
@@ -122,12 +129,14 @@ func (h *WSHub) Run() {
 		select {
 		case client := <-h.register:
 			h.clients[client] = true
+			h.clientCount.Store(int64(len(h.clients)))
 			Logger.Info().Msg("Client connected to WebSocket")
 
 		case client := <-h.unregister:
 			if _, ok := h.clients[client]; ok {
 				delete(h.clients, client)
 				close(client.send)
+				h.clientCount.Store(int64(len(h.clients)))
 				Logger.Info().Msg("Client disconnected from WebSocket")
 			}
 
@@ -140,6 +149,7 @@ func (h *WSHub) Run() {
 					delete(h.clients, client)
 				}
 			}
+			h.clientCount.Store(int64(len(h.clients)))
 		}
 	}
 }
@@ -219,8 +229,9 @@ func ServeWebSocket(w http.ResponseWriter, r *http.Request) {
 func APISystemStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
+	rooms := CurrentModel().Rooms
 	status := SystemStatus{
-		TotalRooms:     len(model.Rooms),
+		TotalRooms:     len(rooms),
 		OccupiedRooms:  0,
 		ActiveMotion:   0,
 		TotalCameras:   0,
@@ -230,7 +241,7 @@ func APISystemStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Calculate stats and room statuses
-	for _, room := range model.Rooms {
+	for _, room := range rooms {
 		status.TotalCameras += len(room.Pic_topics)
 
 		// Get room occupancy and motion status
@@ -239,14 +250,14 @@ func APISystemStatus(w http.ResponseWriter, r *http.Request) {
 		lastUpdate := time.Now().Unix()
 
 		// Check occupancy status
-		if val, exists := last_occupancy_state[room.Name]; exists && val {
+		if val, exists := GetOccupancyState(room.Name); exists && val {
 			occupied = true
 			status.OccupiedRooms++
 		}
 
 		// Check motion status
 		for _, topic := range room.Motion_topics {
-			if val, exists := last_motion_state[topic]; exists && val {
+			if GetMotionState(topic) {
 				motion = true
 				status.ActiveMotion++
 				break
@@ -287,16 +298,16 @@ func APIRoomDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Find the room to get its pic topics
-	for _, room := range model.Rooms {
+	for _, room := range CurrentModel().Rooms {
 		if room.Name == roomName {
 			// Get room status
-			if val, exists := last_occupancy_state[room.Name]; exists {
+			if val, exists := GetOccupancyState(room.Name); exists {
 				detail.Occupied = val
 			}
 
 			// Check motion status
 			for _, topic := range room.Motion_topics {
-				if val, exists := last_motion_state[topic]; exists && val {
+				if GetMotionState(topic) {
 					detail.Motion = true
 					break
 				}
@@ -312,7 +323,7 @@ func APIRoomDetail(w http.ResponseWriter, r *http.Request) {
 				})
 
 				// Get detection results from cache
-				if cacheItem, exists := cache[topic]; exists {
+				if cacheItem, exists := CacheGet(topic); exists {
 					for _, pred := range cacheItem.results.Predictions {
 						detail.Detections = append(detail.Detections, DetectionResult{
 							RoomName:   roomName,

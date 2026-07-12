@@ -129,6 +129,7 @@ func DetectObjects(jpegData []byte) ([]TritonDetection, error) {
 	}
 
 	// --- preprocessing ---------------------------------------------------
+	preStart := time.Now()
 	imgRaw, _, err := image.Decode(bytes.NewReader(jpegData))
 	if err != nil {
 		return nil, fmt.Errorf("triton: decode image: %w", err)
@@ -147,6 +148,7 @@ func DetectObjects(jpegData []byte) ([]TritonDetection, error) {
 	for i, v := range rawInput {
 		binary.LittleEndian.PutUint32(rawBytes[i*4:], math.Float32bits(v))
 	}
+	RecordPreprocess(time.Since(preStart))
 
 	// --- gRPC inference request ------------------------------------------
 	req := &tritongprc.ModelInferRequest{
@@ -168,10 +170,13 @@ func DetectObjects(jpegData []byte) ([]TritonDetection, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
+	inferStart := time.Now()
 	resp, err := tritonClient.client.ModelInfer(ctx, req)
 	if err != nil {
+		RecordDetection(modelName, "error", time.Since(inferStart))
 		return nil, fmt.Errorf("triton: ModelInfer RPC: %w", err)
 	}
+	RecordDetection(modelName, "ok", time.Since(inferStart))
 
 	// --- parse output tensor ---------------------------------------------
 	// YOLO11 exports to ONNX with shape [1, 4+numClasses, numAnchors].
