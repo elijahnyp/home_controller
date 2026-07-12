@@ -2,9 +2,6 @@ package util
 
 import (
 	"encoding/json"
-	"fmt"
-
-	MQTT "github.com/eclipse/paho.mqtt.golang"
 )
 
 type HAAvdvertisementAvailability struct {
@@ -66,12 +63,17 @@ func ConstructHAAdvertisement(name, stateTopic string) HAAdvertisement {
 	}
 }
 
-func AdvertiseHA(r []Room, client MQTT.Client) {
+func AdvertiseHA(r []Room) {
+	if Client == nil {
+		Logger.Debug().Msg("AdvertiseHA skipped: MQTT client not initialized")
+		return
+	}
 	for _, room := range r {
 		if room.Occupancy_topic != "" {
 			ha := ConstructHAAdvertisement(room.Name, room.Occupancy_topic)
-			if token := client.Publish("homeassistant/binary_sensor/"+room.Name+"/occupancy/config", 0, false, ha.ToJson()); token.Wait() && token.Error() != nil {
-				Logger.Panic().Msgf("Error Publishing: %v", fmt.Errorf("%v", token.Error()))
+			topic := "homeassistant/binary_sensor/" + room.Name + "/occupancy/config"
+			if token := Client.Publish(topic, 0, false, ha.ToJson()); token.Wait() && token.Error() != nil {
+				Logger.Error().Msgf("Error advertising HA for %s: %v", room.Name, token.Error())
 			}
 		}
 	}

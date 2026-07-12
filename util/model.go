@@ -2,8 +2,13 @@ package util
 
 import (
 	"fmt"
+	"sync"
 	"time"
 )
+
+// statusMu guards model_status, which is mutated by the occupancy goroutine and
+// read concurrently by HTTP handlers and metric callbacks.
+var statusMu sync.RWMutex
 
 var model_status *ModelStatus
 
@@ -49,7 +54,7 @@ type Room struct {
 	Occupancy_topic  string   `mapstructure:"occupancy_topic"`
 	Motion_topics    []string `mapstructure:"motion_topics"`
 	Pic_topics       []string `mapstructure:"pic_topics"`
-	Door_topics      []string `mapstructure:"door_dopics"`
+	Door_topics      []string `mapstructure:"door_topics"`
 	Occupancy_period int64    `mapstructure:"occupancy_period"`
 }
 
@@ -81,7 +86,37 @@ func (m *RoomStatus) Motion(state bool) {
 }
 
 func (m *Model) UpdateRoomStatus(room string, item RoomStatus) {
+	statusMu.Lock()
+	defer statusMu.Unlock()
+	if model_status == nil {
+		model_status = newModelStatus()
+	}
 	model_status.Room_status[room] = item
+}
+
+// GetRoomStatus returns a copy of the room's status. RoomStatus is a value type
+// with only value fields, so the returned copy is a safe point-in-time snapshot.
+func (m *Model) GetRoomStatus(room string) RoomStatus {
+	statusMu.RLock()
+	defer statusMu.RUnlock()
+	if model_status == nil {
+		return RoomStatus{}
+	}
+	return model_status.Room_status[room]
+}
+
+// SnapshotRoomStatuses returns a copy of the room-status map for safe iteration
+// by HTTP handlers and metric callbacks.
+func (m *Model) SnapshotRoomStatuses() map[string]RoomStatus {
+	statusMu.RLock()
+	defer statusMu.RUnlock()
+	out := make(map[string]RoomStatus)
+	if model_status != nil {
+		for k, v := range model_status.Room_status {
+			out[k] = v
+		}
+	}
+	return out
 }
 
 func (m *RoomStatus) GetLastOccupied() int64 {
@@ -160,9 +195,11 @@ func (m Model) ModelStatus() *ModelStatus {
 }
 
 func (m *Model) BuildModel() error {
+	statusMu.Lock()
 	if model_status == nil {
 		model_status = newModelStatus()
 	}
+	statusMu.Unlock()
 	err := Config.UnmarshalKey("model", m)
 	if err != nil {
 		Logger.Error().Msgf("error unmarshaling model: %v", err)

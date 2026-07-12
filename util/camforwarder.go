@@ -56,15 +56,18 @@ func cam_worker(jobs <-chan CamForwarderCamera) {
 }
 
 func process_job(job CamForwarderCamera) {
+	start := time.Now()
 	req, err := http.NewRequest("GET", job.Url, nil)
 	if err != nil {
 		Logger.Warn().Msgf("Unable to get pic from %v: %v", job.Url, err.Error())
+		RecordCamFetch("request_err", time.Since(start))
 		return
 	}
 	req.Header.Set("Accept", "*/*")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		Logger.Warn().Msgf("Unable to get pic from %v: %v", job.Url, err.Error())
+		RecordCamFetch("http_err", time.Since(start))
 		return
 	}
 	defer func() {
@@ -74,17 +77,21 @@ func process_job(job CamForwarderCamera) {
 	}()
 	if resp.StatusCode > 299 || resp.StatusCode < 200 {
 		Logger.Warn().Msgf("non-2xx code received from camera: %d", resp.StatusCode)
+		RecordCamFetch("bad_status", time.Since(start))
 		return
 	}
 	if resp.Header.Get("Content-Type") != "image/jpeg" {
 		Logger.Warn().Msgf("Invalid image mimetype for %v: %v", job.Url, resp.Header.Get("Content-Type"))
+		RecordCamFetch("bad_mime", time.Since(start))
 		return
 	}
 	img, err := io.ReadAll(resp.Body)
 	if err != nil {
 		Logger.Warn().Msgf("Error reading image data from %v: %v", job.Url, err)
+		RecordCamFetch("read_err", time.Since(start))
 		return
 	}
 	token := Client.Publish(job.Topic, byte(0), false, img)
 	token.Wait()
+	RecordCamFetch("ok", time.Since(start))
 }

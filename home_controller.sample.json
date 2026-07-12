@@ -54,8 +54,10 @@
                 "occupancy_period": 300,
                 "occupancy_topic": "hab/model/garage/occupancy",
                 "motion_topics": [
-                    "hab/wangwood/out/garage_stairs_door_sensor",
                     "hab/wangwood/out/garage_sensor_motion"
+                ],
+                "door_topics": [
+                    "hab/wangwood/out/garage_stairs_door_sensor"
                 ],
                 "pic_topics": []
             }

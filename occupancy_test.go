@@ -189,8 +189,8 @@ func TestMotionManagerRoutine(t *testing.T) {
 		{"Motion stop integer", "0", MOTION_STOP},
 		{"Motion start string", "ON", MOTION_START},
 		{"Motion stop string", "OFF", MOTION_STOP},
-		{"Door open", "OPEN", MOTION_STOP},
-		{"Door closed", "CLOSED", MOTION_START},
+		// A door reported via a motion topic: opening is an occupancy trigger.
+		{"Door open", "OPEN", DOOR_OPEN},
 	}
 
 	for _, tt := range tests {
@@ -215,6 +215,49 @@ func TestMotionManagerRoutine(t *testing.T) {
 				t.Error("Timeout waiting for motion processing result")
 			}
 		})
+	}
+
+	// A closing door is a no-op: it must not emit a result.
+	t.Run("Door closed no-op", func(t *testing.T) {
+		motion_channel <- MQTT_Item{Room: "test_room", Data: []byte("CLOSED"), Topic: "test/motion", Type: MOTION}
+		select {
+		case result := <-results_channel:
+			t.Errorf("Expected no result for CLOSED, got %d", result.Analysis_result)
+		case <-time.After(200 * time.Millisecond):
+			// expected: no result
+		}
+	})
+}
+
+func TestDoorManagerRoutine(t *testing.T) {
+	door_channel = make(chan MQTT_Item, 10)
+	results_channel = make(chan MQTT_Item, 10)
+
+	go DoorManagerRoutine()
+
+	// An opening door produces a DOOR_OPEN occupancy trigger.
+	openCases := []string{"OPEN", "ON", "1", "true"}
+	for _, payload := range openCases {
+		door_channel <- MQTT_Item{Room: "test_room", Data: []byte(payload), Topic: "test/door", Type: DOOR}
+		select {
+		case result := <-results_channel:
+			if result.Analysis_result != DOOR_OPEN {
+				t.Errorf("payload %q: expected DOOR_OPEN, got %d", payload, result.Analysis_result)
+			}
+		case <-time.After(1 * time.Second):
+			t.Errorf("payload %q: timeout waiting for door result", payload)
+		}
+	}
+
+	// A closing door is a no-op.
+	for _, payload := range []string{"CLOSED", "OFF", "0", "false"} {
+		door_channel <- MQTT_Item{Room: "test_room", Data: []byte(payload), Topic: "test/door", Type: DOOR}
+		select {
+		case result := <-results_channel:
+			t.Errorf("payload %q: expected no result, got %d", payload, result.Analysis_result)
+		case <-time.After(150 * time.Millisecond):
+			// expected: no result
+		}
 	}
 }
 
@@ -277,7 +320,7 @@ func TestHttpImage(t *testing.T) {
 
 func TestStatusOverview(t *testing.T) {
 	// Setup model with test data
-	model = Model{
+	SetModel(&Model{
 		Rooms: []Room{
 			{
 				Name:             "test_room",
@@ -285,7 +328,7 @@ func TestStatusOverview(t *testing.T) {
 				Occupancy_period: 120,
 			},
 		},
-	}
+	})
 
 	// Initialize model status
 	modelStatus := &ModelStatus{
@@ -323,14 +366,14 @@ func TestStatusOverview(t *testing.T) {
 
 func TestModelApi(t *testing.T) {
 	// Setup model with test data
-	model = Model{
+	SetModel(&Model{
 		Rooms: []Room{
 			{
 				Name:       "test_room",
 				Pic_topics: []string{"test/camera1", "test/camera2"},
 			},
 		},
-	}
+	})
 
 	// Setup cache
 	cache = make(map[string]ImageCacheItem)

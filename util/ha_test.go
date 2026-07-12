@@ -149,7 +149,8 @@ func TestAdvertiseHA(t *testing.T) {
 	mockClient := &MockMQTTClient{}
 
 	// Call AdvertiseHA
-	AdvertiseHA(rooms, mockClient)
+	Client = mockClient
+	AdvertiseHA(rooms)
 
 	// Verify publish calls
 	expectedPublishCount := 2 // Only rooms with non-empty occupancy topics
@@ -290,7 +291,8 @@ func TestAdvertiseHA_ErrorHandling(t *testing.T) {
 		}
 	}()
 
-	AdvertiseHA(rooms, mockClient)
+	Client = mockClient
+	AdvertiseHA(rooms)
 
 	// Verify at least one publish call was made
 	if len(mockClient.publishCalls) != 1 {
