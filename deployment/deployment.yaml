@@ -73,7 +73,7 @@ spec:
       - name: nypregcred
       containers:
       - name: occupancy-controller
-        image: ghcr.io/elijahnyp/home_controller:ca5e807
+        image: ghcr.io/elijahnyp/home_controller:6d1307c
         imagePullPolicy: IfNotPresent
         ports:
           - containerPort: 8888
