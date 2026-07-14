@@ -97,3 +97,18 @@ spec:
         - name: config-file
           configMap:
             name: home-controller-config
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: occupancy-controller
+  labels:
+    app: occupancy-controller
+spec:
+  selector:
+    matchLabels:
+      app: occupancy-controller
+  endpoints:
+    - port: monitoring
+      path: /metrics
+      interval: 30s
